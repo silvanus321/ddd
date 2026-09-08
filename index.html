@@ -1,4 +1,5 @@
 <!-- DDD Quick Play v101: 探勘選足公共牌自動完成，事件延後至換牌完成後觸發 -->
+<!-- v113: fix random-seat AI starter auto-turn; verify human hand/decomp selection and decomp surface -->
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
     :root {
       --bg-deep: #08357E;
@@ -3302,6 +3303,15 @@ function startMatch(settings){
 function setupTable(){
   nextCardId=1;game.deck=[];game.public=[];game.discard=[];game.players.forEach((p,i)=>{p.hand=[];p.decomp=[];p.score=0;p.maxPressure=14;p.banned=[];p.banReminders=[];p.decompCount=0;p.bustCount=0;p.demon3ExploreStreak=0;p.demon3OneSwapStreak=0;p.demon3NoScoreExploreStreak=0;p.demon3LastExploreGain=0;p.lastMaxUpdate=0;p.lastActionKind="";p.consecutiveExploreStreak=0;p.lastTurnTriggeredEvent=false;p.consecutiveEventTriggerStreak=0;p.startSeatIndex=i;p.eliminated=false;});
   game.currentIndex=0;game.round=1;game.globalTurn=0;game.endPending=false;game.gameOver=false;game.busy=false;game.logs=[];game.banEventHolds=[];game.actionAudit=null;game.pendingHumanExplore=null;game.activeHumanAction=null;clearSelection(false);closeModal();setupDeck();game.players.forEach(p=>drawCards(2,p.hand));addToPublic([drawOne(),drawOne(),drawOne()].filter(Boolean));mountPlayerRows();addGameHeaderLog();addRoundStateLog(true);setStatus(`${game.players[0].name}先行。目標${game.targetScore}VP。`,"ok");render();
+  // v113：隨機順位若由 AI 起始，必須自動啟動第一個 AI 回合；否則真人會一直被判定為「非自己的回合」而無法點牌。
+  const firstPlayer=currentPlayer();
+  if(firstPlayer?.isAI){
+    setTimeout(()=>{
+      if(!game.gameOver && !game.busy && currentPlayer()?.id===firstPlayer.id){
+        void runAITurn(firstPlayer);
+      }
+    },420);
+  }
 }
 
     function validateHumanTurn(action) {
