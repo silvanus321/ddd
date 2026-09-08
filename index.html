@@ -1,5 +1,6 @@
 <!-- DDD Quick Play v101: 探勘選足公共牌自動完成，事件延後至換牌完成後觸發 -->
 <!-- v113: fix random-seat AI starter auto-turn; verify human hand/decomp selection and decomp surface -->
+<!-- v114: audiovisual juice upgrade; presentation-only additions, no rules/AI/win-condition changes -->
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
     :root {
       --bg-deep: #08357E;
@@ -2332,17 +2333,47 @@ function missionLv3DurationRounds(){return 1;}
       catch (_) { /* storage unavailable */ }
     }
 
-    let soundEnabled = readSoundPreference();
+    const AUDIO_MIXER_DEFAULTS={music:.72,sfx:.88,voice:0,haptic:1};
+    function readAudioMixerPreference(){
+      try{
+        const raw=JSON.parse(localStorage.getItem("deepDiveAudioMixerV114")||"null")||{};
+        return Object.fromEntries(Object.entries(AUDIO_MIXER_DEFAULTS).map(([key,fallback])=>[key,Math.max(0,Math.min(1,Number(raw[key]??fallback))) ]));
+      }catch(_){return {...AUDIO_MIXER_DEFAULTS};}
+    }
+    function saveAudioMixerPreference(){
+      try{localStorage.setItem("deepDiveAudioMixerV114",JSON.stringify(audioMixer));}catch(_){/* storage unavailable */}
+    }
 
-    let audioContext = null;
+    let soundEnabled = readSoundPreference();
+    let audioMixer=readAudioMixerPreference();
+    let audioContext = null, audioBuses=null;
+
+    function ensureAudioBuses(ctx){
+      if(!ctx)return null;
+      if(audioBuses?.ctx===ctx)return audioBuses;
+      const sfx=ctx.createGain(),music=ctx.createGain();
+      sfx.connect(ctx.destination);music.connect(ctx.destination);
+      audioBuses={ctx,sfx,music};
+      applyAudioMixer();
+      return audioBuses;
+    }
+
+    function applyAudioMixer(){
+      if(audioBuses){
+        const now=audioBuses.ctx.currentTime;
+        audioBuses.sfx.gain.setTargetAtTime(soundEnabled?Math.max(.0001,audioMixer.sfx):.0001,now,.04);
+        audioBuses.music.gain.setTargetAtTime(soundEnabled?Math.max(.0001,audioMixer.music):.0001,now,.08);
+      }
+      saveAudioMixerPreference();
+    }
 
     function updateSoundButton() {
       if (!els.soundBtn) return;
       const bothEnabled = soundEnabled && hapticEnabled;
       const anyEnabled = soundEnabled || hapticEnabled;
-      els.soundBtn.textContent = bothEnabled ? "🔊📳 音效/震動" : anyEnabled ? "🔊/📳 音效/震動" : "🔇📴 音效/震動";
+      els.soundBtn.textContent = bothEnabled ? "🔊📳" : anyEnabled ? "🔊/📳" : "🔇📴";
       els.soundBtn.setAttribute("aria-pressed", String(bothEnabled));
-      els.soundBtn.title = bothEnabled ? "關閉音效與震動" : "開啟音效與震動";
+      els.soundBtn.title = "聲光設定";
     }
 
     function getAudioContext() {
@@ -2351,6 +2382,7 @@ function missionLv3DurationRounds(){return 1;}
       if (!AudioCtx) return null;
       if (!audioContext) audioContext = new AudioCtx();
       if (audioContext.state === "suspended") audioContext.resume().catch(() => {});
+      ensureAudioBuses(audioContext);
       return audioContext;
     }
 
@@ -2363,8 +2395,19 @@ function missionLv3DurationRounds(){return 1;}
       gain.gain.setValueAtTime(.0001, start);
       gain.gain.exponentialRampToValueAtTime(volume, start + Math.min(.025, duration / 4));
       gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-      osc.connect(gain).connect(ctx.destination);
+      osc.connect(gain).connect(ensureAudioBuses(ctx)?.sfx || ctx.destination);
       osc.start(start); osc.stop(start + duration + .03);
+    }
+
+    function playMusicTone(ctx, frequency, start, duration, type="sine", volume=.02, endFrequency=null){
+      const osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type=type;osc.frequency.setValueAtTime(Math.max(40,frequency),start);
+      if(endFrequency)osc.frequency.exponentialRampToValueAtTime(Math.max(40,endFrequency),start+duration);
+      gain.gain.setValueAtTime(.0001,start);
+      gain.gain.exponentialRampToValueAtTime(volume,start+Math.min(.04,duration/4));
+      gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+      osc.connect(gain).connect(ensureAudioBuses(ctx)?.music || ctx.destination);
+      osc.start(start);osc.stop(start+duration+.04);
     }
 
     function playNoise(ctx, start, duration, volume = .045, lowpass = 900) {
@@ -2380,7 +2423,7 @@ function missionLv3DurationRounds(){return 1;}
       gain.gain.setValueAtTime(.0001, start);
       gain.gain.exponentialRampToValueAtTime(volume, start + .02);
       gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-      source.connect(filter).connect(gain).connect(ctx.destination);
+      source.connect(filter).connect(gain).connect(ensureAudioBuses(ctx)?.sfx || ctx.destination);
       source.start(start); source.stop(start + duration + .03);
     }
 
@@ -2389,7 +2432,7 @@ function missionLv3DurationRounds(){return 1;}
     function ensureDynamicMusic(){
       const ctx=getAudioContext();
       if(!ctx || dynamicMusic) return dynamicMusic;
-      const master=ctx.createGain(); master.gain.value=.22; master.connect(ctx.destination);
+      const master=ctx.createGain(); master.gain.value=.22; master.connect(ensureAudioBuses(ctx)?.music || ctx.destination);
       const mkLayer=(freq,type="sine")=>{
         const osc=ctx.createOscillator(), gain=ctx.createGain();
         osc.type=type; osc.frequency.value=freq; gain.gain.value=.0001;
@@ -2398,7 +2441,7 @@ function missionLv3DurationRounds(){return 1;}
       };
       dynamicMusic={ctx,master,
         oceanA:mkLayer(55,"sine"), oceanB:mkLayer(82.41,"triangle"),
-        tension:mkLayer(41.2,"sawtooth"), final:mkLayer(110,"triangle"), champ:mkLayer(146.83,"square")};
+        tension:mkLayer(41.2,"sawtooth"), final:mkLayer(110,"triangle"), champ:mkLayer(146.83,"square"),phase:"explore"};
       const now=ctx.currentTime;
       dynamicMusic.oceanA.gain.gain.setTargetAtTime(.018,now,.7);
       dynamicMusic.oceanB.gain.gain.setTargetAtTime(.009,now,.8);
@@ -2446,11 +2489,22 @@ function missionLv3DurationRounds(){return 1;}
       if(!soundEnabled || game.fastMode || game.simulationMode){stopHeartbeatLayer();stopChampionshipBeat();return;}
       const music=ensureDynamicMusic(); if(!music)return;
       const state=dynamicThreatState(), now=music.ctx.currentTime;
-      const set=(layer,value,time=.35)=>layer.gain.gain.setTargetAtTime(Math.max(.0001,value),now,time);
-      set(music.oceanA,.018,.6); set(music.oceanB,.009,.7);
-      set(music.tension,state.maxRatio>.70 ? .010 + Math.min(.013,(state.maxRatio-.70)*.045) : .0001,.35);
-      set(music.final,state.nearWin ? .012 : .0001,.28);
-      set(music.champ,state.champ ? .006 : .0001,.30);
+      const live=(game.players||[]).filter(p=>!p.eliminated),target=Math.max(1,Number(game.targetScore)||1);
+      const topProgress=live.length?Math.max(...live.map(p=>Number(p.score||0)/target)):0;
+      const phase=(state.nearWin||topProgress>=.78)?"final":(topProgress>=.42||Number(game.round||1)>=4)?"race":"explore";
+      const set=(layer,value,time=.55)=>layer.gain.gain.setTargetAtTime(Math.max(.0001,value),now,time);
+      // 三階段以真正 crossfade 疊換，不再突然改音量：探索 → 競速 → 終局。
+      set(music.oceanA,phase==="explore"?.019:phase==="race"?.012:.006,.7);
+      set(music.oceanB,phase==="explore"?.010:phase==="race"?.008:.004,.75);
+      const tensionBase=phase==="explore"?.0001:phase==="race"?.010:.016;
+      set(music.tension,tensionBase+(state.maxRatio>.70?Math.min(.012,(state.maxRatio-.70)*.04):0),.48);
+      set(music.final,phase==="final"?.015:.0001,.48);
+      set(music.champ,state.champ?.006:.0001,.38);
+      if(music.phase!==phase){
+        music.phase=phase;
+        const root=phase==="explore"?220:phase==="race"?293.66:392;
+        [1,1.25,1.5].forEach((m,i)=>playMusicTone(music.ctx,root*m,now+.03+i*.09,.22,"triangle",.012));
+      }
       if(state.nearLimit) startHeartbeatLayer(); else stopHeartbeatLayer();
       if(state.champ) startChampionshipBeat(); else stopChampionshipBeat();
     }
@@ -2474,7 +2528,7 @@ function missionLv3DurationRounds(){return 1;}
     let hapticEnabled = readHapticPreference();
 
     function vibrateGame(kind) {
-      if (!hapticEnabled || game.fastMode || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+      if (!hapticEnabled || audioMixer.haptic<=0 || game.fastMode || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
       const patterns = {
         select: 9,                         // 輕震：選牌
         dive: 16, explore: 18, decomp: 18, wire: 20,
@@ -2483,50 +2537,81 @@ function missionLv3DurationRounds(){return 1;}
         bust: [125, 48, 165],             // 強震：氮醉
         win: [55, 55, 55]                 // 雙／節奏震：勝利
       };
-      try { navigator.vibrate(patterns[kind] || 12); } catch (_) { /* unsupported */ }
+      try {
+        const strength=Math.max(.15,Math.min(1,Number(audioMixer.haptic)||0));
+        const raw=patterns[kind] || 12;
+        const scaled=Array.isArray(raw)?raw.map((n,i)=>i%2?n:Math.max(1,Math.round(n*strength))):Math.max(1,Math.round(raw*strength));
+        navigator.vibrate(scaled);
+      } catch (_) { /* unsupported */ }
     }
 
-    function playGameSfx(kind) {
-      if (!soundEnabled || game.fastMode) return;
+    function playGameSfx(kind, comboCount=1) {
+      if (!soundEnabled || game.simulationMode || (game.fastMode && !["select","invalid"].includes(kind))) return;
       const ctx = getAudioContext();
       if (!ctx) return;
       const t = ctx.currentTime + .02;
+      const ui=Math.max(.2,Math.min(1,audioMixer.sfx));
       switch (kind) {
         case "select":
-          playTone(ctx, 740, t, .055, "sine", .024, 820);
+          playTone(ctx, 740, t, .055, "sine", .020*ui, 840);
+          break;
+        case "invalid":
+          playTone(ctx, 170, t, .075, "square", .028*ui, 125);
+          playTone(ctx, 120, t+.06, .085, "square", .022*ui, 95);
           break;
         case "dive":
-          playTone(ctx, 220, t, .28, "sine", .055, 92);
-          playNoise(ctx, t + .03, .24, .025, 520);
+          playTone(ctx, 220, t, .30, "sine", .050, 86);
+          playNoise(ctx, t + .03, .25, .025, 500);
           break;
         case "explore":
-          playTone(ctx, 880, t, .08, "sine", .045, 990);
-          playTone(ctx, 660, t + .13, .11, "sine", .038, 780);
-          playNoise(ctx, t + .02, .24, .018, 1500);
+          playTone(ctx, 900, t, .07, "sine", .040, 1120);
+          playTone(ctx, 620, t + .12, .12, "triangle", .034, 820);
+          playNoise(ctx, t + .02, .22, .016, 1700);
           break;
         case "decomp":
-          playNoise(ctx, t, .34, .044, 1200);
-          playTone(ctx, 330, t + .02, .28, "sine", .035, 440);
+          playNoise(ctx, t, .38, .040, 1300);
+          playTone(ctx, 320, t + .02, .30, "sine", .032, 455);
+          playNoise(ctx, t+.16, .22, .018, 2600);
           break;
         case "surface":
-          playTone(ctx, 440, t, .16, "triangle", .05, 554.37);
-          playTone(ctx, 659.25, t + .11, .20, "triangle", .055, 880);
-          playTone(ctx, 1046.5, t + .24, .22, "sine", .04);
+          playTone(ctx, 420, t, .16, "triangle", .046, 560);
+          playTone(ctx, 660, t + .11, .22, "triangle", .050, 900);
+          playTone(ctx, 1050, t + .24, .24, "sine", .036, 1320);
+          playNoise(ctx,t+.08,.32,.014,2100);
           break;
         case "wire":
-          playTone(ctx, 250, t, .07, "square", .045, 210);
-          playTone(ctx, 370, t + .075, .08, "square", .038, 320);
-          playTone(ctx, 520, t + .16, .12, "triangle", .04, 620);
+          // 金屬扣 + 繩索拉緊：短促打擊後接亮尾音。
+          playTone(ctx, 245, t, .055, "square", .040, 195);
+          playNoise(ctx,t,.055,.028,3000);
+          playTone(ctx, 385, t + .072, .075, "square", .034, 325);
+          playTone(ctx, 540, t + .15, .13, "triangle", .036, 690);
           break;
-        case "score":
-          playTone(ctx, 659.25, t, .09, "triangle", .042, 783.99);
-          playTone(ctx, 987.77, t + .075, .16, "sine", .048, 1174.66);
+        case "score": {
+          const semitones=Math.max(0,Math.min(7,Number(comboCount||1)-1));
+          const shift=Math.pow(2,semitones/12);
+          playTone(ctx, 659.25*shift, t, .09, "triangle", .040, 783.99*shift);
+          playTone(ctx, 987.77*shift, t + .075, .17, "sine", .046, 1174.66*shift);
           break;
-        case "win":
-          [523.25,659.25,783.99,1046.5].forEach((f,i)=>playTone(ctx,f,t+i*.11,.28,"triangle",.055));
-          playTone(ctx, 1318.5, t + .44, .46, "sine", .045);
+        }
+        case "win": {
+          // 約 3 秒完整勝利小樂句，取代單純四音疊加。
+          const seq=[523.25,659.25,783.99,1046.5,783.99,987.77,1174.66,1318.5,1567.98];
+          seq.forEach((f,i)=>playTone(ctx,f,t+i*.18,i===seq.length-1?.72:.30,i%3===0?"triangle":"sine",i===seq.length-1?.055:.044));
+          break;
+        }
+        case "lose":
+          [392,349.23,293.66,246.94].forEach((f,i)=>playTone(ctx,f,t+i*.22,.42,"triangle",.035,f*.93));
           break;
       }
+    }
+
+    function speakGameCue(text){
+      if(game.fastMode||game.simulationMode||!soundEnabled||audioMixer.voice<=0||typeof speechSynthesis==="undefined"||!text)return;
+      try{
+        const utter=new SpeechSynthesisUtterance(String(text));
+        utter.lang="zh-TW";utter.rate=.96;utter.pitch=.92;utter.volume=Math.max(0,Math.min(1,audioMixer.voice));
+        speechSynthesis.cancel();speechSynthesis.speak(utter);
+      }catch(_){/* speech synthesis unavailable */}
     }
 
     function playEventSound(level, color="") {
@@ -2587,7 +2672,7 @@ function missionLv3DurationRounds(){return 1;}
       const count = kind === "bust" ? 18 : 14;
       for (let i = 0; i < count; i++) {
         const particle = document.createElement("span");
-        particle.className = "action-particle";
+        particle.className = `action-particle ${kind === "bust" ? "particle-shard" : "particle-bubble"}`;
         const size = kind === "bust" ? 6 + Math.random() * 14 : 5 + Math.random() * 10;
         particle.style.setProperty("--x", `${10 + Math.random() * 80}%`);
         particle.style.setProperty("--y", `${48 + Math.random() * 36}%`);
@@ -2629,7 +2714,7 @@ function missionLv3DurationRounds(){return 1;}
       const count = level <= 2 ? 22 : 16;
       for (let i = 0; i < count; i++) {
         const particle = document.createElement("span");
-        particle.className = "event-particle";
+        particle.className = `event-particle ${level<=2?"particle-shard":"particle-bubble"}`;
         const size = level === 1 ? 5 + Math.random() * 10 : 5 + Math.random() * 16;
         particle.style.setProperty("--x", `${6 + Math.random() * 88}%`);
         particle.style.setProperty("--y", `${48 + Math.random() * 48}%`);
@@ -2654,15 +2739,76 @@ function missionLv3DurationRounds(){return 1;}
       els.eventFx.classList.add("active");
       els.eventFx.setAttribute("aria-hidden", "false");
       if (level <= 2) document.body.classList.add("event-impact");
+      if (level >= 4) document.body.classList.add("event-cinematic");
       playEventSound(level, trigger.color);
       vibrateGame("event");
+      if(level>=4)speakGameCue(name);
 
-      const duration = game.fastMode ? 150 : 980;
+      const duration = game.fastMode ? 150 : 650 + level*95;
       await new Promise(resolve => setTimeout(resolve, duration));
       els.eventFx.classList.remove("active");
       document.body.classList.remove("event-impact");
+      document.body.classList.remove("event-cinematic");
       els.eventFx.setAttribute("aria-hidden", "true");
       if (!game.fastMode) await new Promise(resolve => setTimeout(resolve, 170));
+    }
+
+    const juiceState={scoreCombo:new Map(),n2ByPlayer:new Map(),lastTurnPlayerId:null};
+
+    function ensureJuiceLayer(){
+      let layer=document.getElementById("juiceLayer");
+      if(!layer){layer=document.createElement("div");layer.id="juiceLayer";layer.className="juice-layer";layer.setAttribute("aria-hidden","true");document.body.appendChild(layer);}
+      return layer;
+    }
+
+    function showScorePopup(player,gained,combo=1){
+      if(game.fastMode||game.simulationMode||!player||!(Number(gained)>0))return;
+      const layer=ensureJuiceLayer(),row=document.querySelector(`.row-zone[data-player-id="${CSS.escape(String(player.id))}"]`);
+      const rect=row?.getBoundingClientRect();
+      const pop=document.createElement("div");pop.className="score-popup";
+      pop.innerHTML=`<strong>+${Number(gained)} VP</strong>${combo>1?`<span>COMBO ×${combo}</span>`:""}`;
+      pop.style.left=`${rect?rect.left+rect.width*.52:window.innerWidth*.5}px`;
+      pop.style.top=`${rect?rect.top+Math.min(80,rect.height*.42):window.innerHeight*.45}px`;
+      layer.appendChild(pop);setTimeout(()=>pop.remove(),1050);
+    }
+
+    function presentTurnTransition(player){
+      if(game.fastMode||game.simulationMode||!player)return;
+      let banner=document.getElementById("turnBanner");
+      if(!banner){banner=document.createElement("div");banner.id="turnBanner";banner.className="turn-banner";document.body.appendChild(banner);}
+      const theme=seatThemeOf(player);banner.style.setProperty("--turn-accent",theme?.color||"#7ce7ff");
+      banner.innerHTML=`<small>ROUND ${game.round}</small><strong>${escapeHtml(player.name)}的回合</strong>`;
+      banner.classList.remove("show");void banner.offsetWidth;banner.classList.add("show");
+      setTimeout(()=>banner.classList.remove("show"),620);
+    }
+
+    async function animateCardsToward(action,selector=".card.selected"){
+      if(game.fastMode||game.simulationMode||window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches)return;
+      const cards=[...document.querySelectorAll(selector)].filter(el=>el.offsetParent!==null);
+      if(!cards.length)return;
+      const target=document.querySelector(`.action-btn[data-action="${CSS.escape(String(action))}"]`) || document.querySelector(".control-panel");
+      const tr=target?.getBoundingClientRect();if(!tr)return;
+      const layer=ensureJuiceLayer();
+      cards.slice(0,6).forEach((card,i)=>{
+        const r=card.getBoundingClientRect(),clone=card.cloneNode(true);clone.className="card card-flight";
+        clone.style.left=`${r.left}px`;clone.style.top=`${r.top}px`;clone.style.width=`${r.width}px`;clone.style.height=`${r.height}px`;layer.appendChild(clone);
+        const dx=tr.left+tr.width/2-(r.left+r.width/2),dy=tr.top+tr.height/2-(r.top+r.height/2);
+        clone.style.setProperty("--flight-x",`${dx}px`);clone.style.setProperty("--flight-y",`${dy}px`);clone.style.animationDelay=`${i*18}ms`;setTimeout(()=>clone.remove(),430+i*18);
+      });
+      await new Promise(resolve=>setTimeout(resolve,245));
+    }
+
+    function markNitrogenChange(player,currentN2){
+      const previous=juiceState.n2ByPlayer.get(player.id);juiceState.n2ByPlayer.set(player.id,currentN2);
+      if(previous===undefined||previous===currentN2)return;
+      const row=document.querySelector(`.row-zone[data-player-id="${CSS.escape(String(player.id))}"]`),hud=row?.querySelector(".nitrogen-hud");
+      if(!hud)return;hud.classList.remove("n2-value-bump","n2-value-drop");void hud.offsetWidth;hud.classList.add(currentN2>previous?"n2-value-bump":"n2-value-drop");
+    }
+
+    function logFxClass(text){
+      text=String(text||"");
+      if(text.includes("上浮"))return "log-surface";if(text.includes("佈線"))return "log-wire";if(text.includes("減壓"))return "log-decomp";
+      if(text.includes("下潛"))return "log-dive";if(text.includes("探勘"))return "log-explore";if(text.includes("氮醉"))return "log-bust";if(text.includes("事件"))return "log-event";return "";
     }
 
     function logShortName(name) {
@@ -3051,7 +3197,7 @@ function renderPlayer(player){
   renderPile(view.decompCards,player.decomp,{size:"tiny",zone:decompZoneName,selectable:humanTurn&&!selectionLocked,emptyText:"尚未減壓"});
   const theme=seatThemeOf(player),currentN2=Math.max(0,Number(pressure(player))||0),limit=Math.max(0,Number(player.maxPressure)||0),ratio=limit>0?currentN2/limit:0,pct=Math.max(0,Math.min(100,ratio*100));const state=currentN2>limit?"n2-bust":currentN2>=limit?"n2-critical":currentN2>=limit-1?"n2-heartbeat":ratio>.70?"n2-warning":"n2-safe";
   view.handLabel.innerHTML=`<span class="player-name">${escapeHtml(player.name)} <small style="opacity:.72">[${player.isAI?"AI":"真人"}]</small>${player.eliminated?" 死亡":""}</span><span class="compact-stat"><img src="${theme.scoreIcon}" alt="VP">VP ${player.score}</span><span class="nitrogen-hud ${state}"><span class="n2-label">N₂</span><span class="n2-meter"><i class="n2-fill" style="--n2-pct:${pct.toFixed(1)}%"></i></span><span class="n2-value">${formatNumber(currentN2)}/${formatNumber(limit)}</span></span>`;
-  view.decompMeta.innerHTML=`<span>${player.decomp.length}/${currentDecompCardLimit()}</span><span class="compact-stat"><img src="${theme.tankIcon}" alt="氮">${formatNumber(player.decomp.reduce((s,c)=>s+decompValue(c),0))}</span>`;view.handZone.classList.toggle("turn-active",currentPlayer()?.id===player.id&&!game.gameOver);view.handZone.classList.toggle("pressure-dead",Boolean(player.eliminated)||limit<=3);
+  view.decompMeta.innerHTML=`<span>${player.decomp.length}/${currentDecompCardLimit()}</span><span class="compact-stat"><img src="${theme.tankIcon}" alt="氮">${formatNumber(player.decomp.reduce((s,c)=>s+decompValue(c),0))}</span>`;view.handZone.classList.toggle("turn-active",currentPlayer()?.id===player.id&&!game.gameOver);view.handZone.classList.toggle("pressure-dead",Boolean(player.eliminated)||limit<=3);queueMicrotask(()=>markNitrogenChange(player,currentN2));
 }
 
 function render(){
@@ -3147,7 +3293,7 @@ function render(){
       if (!game.logs.length) { els.logList.textContent = "對局尚未開始。"; return; }
       game.logs.forEach(entry => {
         const div = document.createElement("div");
-        div.className = `log-item${entry.kind?` log-${entry.kind}`:""}`;
+        div.className = `log-item${entry.kind?` log-${entry.kind}`:""} ${logFxClass(entry.text)}`.trim();
         const label=entry.label===null || entry.label===undefined
           ? `R${entry.round}・T${Number(entry.turn ?? 0)+1}`
           : entry.label;
@@ -3305,6 +3451,7 @@ function setupTable(){
   game.currentIndex=0;game.round=1;game.globalTurn=0;game.endPending=false;game.gameOver=false;game.busy=false;game.logs=[];game.banEventHolds=[];game.actionAudit=null;game.pendingHumanExplore=null;game.activeHumanAction=null;clearSelection(false);closeModal();setupDeck();game.players.forEach(p=>drawCards(2,p.hand));addToPublic([drawOne(),drawOne(),drawOne()].filter(Boolean));mountPlayerRows();addGameHeaderLog();addRoundStateLog(true);setStatus(`${game.players[0].name}先行。目標${game.targetScore}VP。`,"ok");render();
   // v113：隨機順位若由 AI 起始，必須自動啟動第一個 AI 回合；否則真人會一直被判定為「非自己的回合」而無法點牌。
   const firstPlayer=currentPlayer();
+  presentTurnTransition(firstPlayer);
   if(firstPlayer?.isAI){
     setTimeout(()=>{
       if(!game.gameOver && !game.busy && currentPlayer()?.id===firstPlayer.id){
@@ -3339,6 +3486,7 @@ function setupTable(){
 
       game.busy=true;
       beginActionAudit(human,actionName("explore"));
+      await animateCardsToward("explore");
       removeCardsFromZone(human.hand,dropped);
 
       // v101：探勘事件改到換牌完成後才觸發。一般棄牌先進棄牌區；
@@ -3375,6 +3523,7 @@ function setupTable(){
       render();
 
       // 先完成交換：拿回公共牌、補滿公共區。
+      await animateCardsToward("explore", "#publicCards .card.selected");
       removeCardsFromZone(game.public,picked);
       picked.forEach(card=>{card.lockedBy=null;});
       human.hand.push(...picked);
@@ -3405,7 +3554,7 @@ function setupTable(){
 
     async function humanAction(action) {
       const invalid=validateHumanTurn(action);
-      if(invalid){setStatus(invalid,"error");return;}
+      if(invalid){setStatus(invalid,"error");playGameSfx("invalid");vibrateGame("select");return;}
       const tutorialActive=false;
       const human=humanPlayer();
 
@@ -3440,10 +3589,12 @@ function setupTable(){
 
       if(!tutorialActive && !isActionSelectionReady(action)){
         setStatus("所選卡牌尚未形成此行動的合法組合。","error");
+        playGameSfx("invalid");vibrateGame("select");
         render();
         return;
       }
 
+      await animateCardsToward(action);
       game.activeHumanAction=null;
       game.busy=true;render();
       beginActionAudit(human,actionName(action));
@@ -4771,7 +4922,19 @@ function executeWire(player,orderedCards){const discarded=orderedCards[0],scored
 function logCompletedAction(player,summary){addLog(`${player.name}｜${summary}`,false);}
 
 async function finishAction(player,summary,actionKind=""){
-  finalizeConsecutiveEventTriggerCost(player);await checkBust(player);const prev=String(player.lastActionKind||"");player.consecutiveExploreStreak=String(actionKind)==="explore"?(prev==="explore"?Math.max(1,Number(player.consecutiveExploreStreak||1))+1:1):0;player.lastActionKind=String(actionKind||"");logCompletedAction(player,summary,actionKind);finalizeActionAudit(player);if(!player.eliminated&&player.score>=game.targetScore)game.endPending=true;game.globalTurn+=1;if(livingCompetitivePlayers().length<=1){game.busy=false;render();endGame();return;}game.busy=false;render();await advanceTurn();
+  finalizeConsecutiveEventTriggerCost(player);await checkBust(player);
+  const prev=String(player.lastActionKind||"");
+  const beforeScore=Number(game.actionAudit?.scoreBefore??player.score),gained=Math.max(0,Number(player.score||0)-beforeScore);
+  if(actionKind)playGameSfx(actionKind);
+  if(gained>0){
+    const scoringNow=["surface","wire"].includes(String(actionKind));
+    const scoringPrev=["surface","wire"].includes(prev);
+    const combo=scoringNow&&scoringPrev?(Number(juiceState.scoreCombo.get(player.id)||1)+1):1;
+    juiceState.scoreCombo.set(player.id,combo);
+    playGameSfx("score",combo);vibrateGame("score");showScorePopup(player,gained,combo);
+  }else if(!["surface","wire"].includes(String(actionKind))){juiceState.scoreCombo.set(player.id,0);}
+  speakGameCue(actionName(actionKind));
+  player.consecutiveExploreStreak=String(actionKind)==="explore"?(prev==="explore"?Math.max(1,Number(player.consecutiveExploreStreak||1))+1:1):0;player.lastActionKind=String(actionKind||"");logCompletedAction(player,summary,actionKind);finalizeActionAudit(player);if(!player.eliminated&&player.score>=game.targetScore)game.endPending=true;game.globalTurn+=1;if(livingCompetitivePlayers().length<=1){game.busy=false;render();endGame();return;}game.busy=false;render();await advanceTurn();
 }
 
     function unlockCardsFor(player) {
@@ -4792,7 +4955,7 @@ async function finishAction(player,summary,actionKind=""){
     }
 
 async function advanceTurn(){
-  const prev=game.currentIndex;let wrapped=false;do{const next=(game.currentIndex+1)%game.players.length;if(next<=game.currentIndex)wrapped=true;game.currentIndex=next;}while(currentPlayer()?.eliminated&&game.currentIndex!==prev);if(wrapped){if(game.endPending){endGame();return;}game.round+=1;addRoundStateLog(false);}const next=currentPlayer();releaseBanHoldsAtSourceNextTurn(next);unlockCardsFor(next);setStatus(`第${game.round}輪，輪到${next.name}。`,"ok");render();if(next.isAI){await sleep(420);await runAITurn(next);}
+  const prev=game.currentIndex;let wrapped=false;do{const next=(game.currentIndex+1)%game.players.length;if(next<=game.currentIndex)wrapped=true;game.currentIndex=next;}while(currentPlayer()?.eliminated&&game.currentIndex!==prev);if(wrapped){if(game.endPending){endGame();return;}game.round+=1;addRoundStateLog(false);}const next=currentPlayer();releaseBanHoldsAtSourceNextTurn(next);unlockCardsFor(next);setStatus(`第${game.round}輪，輪到${next.name}。`,"ok");render();presentTurnTransition(next);if(next.isAI){await sleep(420);await runAITurn(next);}
 }
 
     function chooseUniversalImmediateWinningScore(player) {
@@ -7103,11 +7266,25 @@ function aiTuning(player){return AI_V91_TUNING[Number(player?.aiCode)]||{wirePre
     }
 
 function endGame(){
-  if(game.gameOver)return;game.gameOver=true;game.busy=false;clearSelection(false);silenceDynamicAudio();playGameSfx("win");vibrateGame("win");const ranked=game.players.slice().sort(compareCompetitivePlayers),top=ranked[0];addLog(`🏁 遊戲結束：${top.name}以${top.score}VP獲勝。`,true);setStatus(`${top.name}獲勝！`,"ok");render();els.modalTitle.textContent=`${top.name}獲勝`;els.modalText.textContent=`單局結束｜${activeColors().map(c=>COLOR_NAMES[c]||c).join("/")}｜${game.players.length}人`;els.modalBody.innerHTML=`<div class="quick-result-list">${ranked.map((p,i)=>`<div><b>${i+1}. ${escapeHtml(p.name)}</b><span>${p.score} VP｜Max N₂ ${formatNumber(p.maxPressure)}</span></div>`).join("")}</div>`;els.modalError.textContent="";els.modalActions.innerHTML="";els.modalActions.append(makeButton("再玩一局","btn primary",showQuickSetup));els.modalBackdrop.classList.add("open");
+  if(game.gameOver)return;game.gameOver=true;game.busy=false;clearSelection(false);silenceDynamicAudio();const ranked=game.players.slice().sort(compareCompetitivePlayers),top=ranked[0],human=humanPlayer();playGameSfx(human&&top.id!==human.id?"lose":"win");vibrateGame("win");speakGameCue(human&&top.id!==human.id?"挑戰結束":`${top.name}獲勝`);addLog(`🏁 遊戲結束：${top.name}以${top.score}VP獲勝。`,true);setStatus(`${top.name}獲勝！`,"ok");render();els.modalTitle.textContent=`${top.name}獲勝`;els.modalText.textContent=`單局結束｜${activeColors().map(c=>COLOR_NAMES[c]||c).join("/")}｜${game.players.length}人`;els.modalBody.innerHTML=`<div class="quick-result-list">${ranked.map((p,i)=>`<div><b>${i+1}. ${escapeHtml(p.name)}</b><span>${p.score} VP｜Max N₂ ${formatNumber(p.maxPressure)}</span></div>`).join("")}</div>`;els.modalError.textContent="";els.modalActions.innerHTML="";els.modalActions.append(makeButton("再玩一局","btn primary",showQuickSetup));els.modalBackdrop.classList.add("open");
 }
 
     function makeButton(text,className,handler) {
       const btn=document.createElement("button"); btn.type="button"; btn.className=className; btn.textContent=text; btn.addEventListener("click",handler); return btn;
+    }
+
+    function openAudioMixer(){
+      const modal=els.modalBackdrop.querySelector(".modal");modal?.classList.remove("mode-home-modal");
+      els.modalTitle.textContent="聲光設定";els.modalText.textContent="音樂、效果音、語音提示與震動可分開調整；設定會保存在此裝置。";
+      const rows=[
+        ["music","🎵 音樂"],["sfx","🔊 SFX / UI"],["voice","🗣️ 語音提示"],["haptic","📳 震動強度"]
+      ];
+      els.modalBody.innerHTML=`<div class="audio-mixer-master"><button type="button" class="btn ${soundEnabled?"primary":""}" id="audioMasterToggle">${soundEnabled?"聲音：開":"聲音：關"}</button><button type="button" class="btn ${hapticEnabled?"primary":""}" id="hapticMasterToggle">${hapticEnabled?"震動：開":"震動：關"}</button></div><div class="audio-mixer">${rows.map(([key,label])=>`<label class="audio-mixer-row"><span>${label}</span><input type="range" min="0" max="100" step="1" value="${Math.round((audioMixer[key]??0)*100)}" data-audio-key="${key}"><output>${Math.round((audioMixer[key]??0)*100)}%</output></label>`).join("")}</div><p class="audio-mixer-note">快速模式仍保留極簡選牌／錯誤提示音；其餘音樂與演出自動降級。</p>`;
+      els.modalActions.innerHTML="";els.modalError.textContent="";els.modalActions.appendChild(makeButton("完成","btn primary",closeModal));els.modalBackdrop.classList.add("open");
+      const refreshMaster=()=>{const a=document.getElementById("audioMasterToggle"),h=document.getElementById("hapticMasterToggle");if(a){a.textContent=soundEnabled?"聲音：開":"聲音：關";a.classList.toggle("primary",soundEnabled);}if(h){h.textContent=hapticEnabled?"震動：開":"震動：關";h.classList.toggle("primary",hapticEnabled);}};
+      document.getElementById("audioMasterToggle")?.addEventListener("click",()=>{soundEnabled=!soundEnabled;saveSoundPreference();applyAudioMixer();updateSoundButton();if(soundEnabled)getAudioContext();else silenceDynamicAudio();refreshMaster();});
+      document.getElementById("hapticMasterToggle")?.addEventListener("click",()=>{hapticEnabled=!hapticEnabled;saveHapticPreference();updateSoundButton();refreshMaster();});
+      els.modalBody.querySelectorAll("[data-audio-key]").forEach(input=>input.addEventListener("input",()=>{const key=input.dataset.audioKey;audioMixer[key]=Number(input.value)/100;input.parentElement.querySelector("output").textContent=`${input.value}%`;applyAudioMixer();if(key==="sfx"&&Number(input.value)>0)playGameSfx("select");if(key==="haptic"&&Number(input.value)>0)vibrateGame("select");}));
     }
 
     function closeModal() {
@@ -7365,7 +7542,7 @@ function setStatus(text,type=""){game.lastStatus=String(text||"");game.messageTy
 
 function addActionNote(note){if(game.actionAudit)game.actionAudit.notes.push(String(note||""));}
 
-function beginActionAudit(player,label){game.actionAudit={playerId:player?.id||null,label:String(label||""),notes:[]};}
+function beginActionAudit(player,label){game.actionAudit={playerId:player?.id||null,label:String(label||""),scoreBefore:Number(player?.score||0),notes:[]};}
 
 function escapeHtml(value){return String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));}
 
@@ -7418,6 +7595,25 @@ const quickStyle=document.createElement("style");quickStyle.textContent=`
     .game-shell{grid-template-columns:84px minmax(0,1fr)}
   }
   @media(max-width:899px){.player-rows{grid-template-columns:1fr}}
+
+  /* v114 audiovisual juice layer */
+  .juice-layer{position:fixed;inset:0;z-index:96;pointer-events:none;overflow:hidden}
+  .score-popup{position:fixed;transform:translate(-50%,-50%);display:grid;place-items:center;gap:2px;animation:scoreFloat 1s cubic-bezier(.16,.86,.25,1) both;text-shadow:0 4px 18px rgba(0,0,0,.55)}
+  .score-popup strong{font-size:clamp(1.45rem,6vw,2.35rem);line-height:1;color:#fff3a4;letter-spacing:.02em}
+  .score-popup span{font-size:.72rem;font-weight:950;color:#7cf4ff;padding:2px 7px;border:1px solid rgba(124,244,255,.5);border-radius:999px;background:rgba(0,25,42,.82)}
+  @keyframes scoreFloat{0%{opacity:0;transform:translate(-50%,-15%) scale(.72)}25%{opacity:1;transform:translate(-50%,-55%) scale(1.12)}100%{opacity:0;transform:translate(-50%,-150%) scale(.94)}}
+  .turn-banner{position:fixed;z-index:91;left:50%;top:18%;min-width:min(360px,82vw);padding:8px 24px 10px;transform:translate(-50%,-15px) scale(.96);opacity:0;pointer-events:none;text-align:center;border-top:1px solid var(--turn-accent,#7ce7ff);border-bottom:1px solid var(--turn-accent,#7ce7ff);background:linear-gradient(90deg,transparent,rgba(0,24,42,.92) 18%,rgba(0,24,42,.92) 82%,transparent);filter:drop-shadow(0 8px 16px rgba(0,0,0,.34))}
+  .turn-banner small{display:block;color:var(--turn-accent,#7ce7ff);font-size:.62rem;font-weight:950;letter-spacing:.18em}.turn-banner strong{display:block;margin-top:1px;color:white;font-size:1.08rem}.turn-banner.show{animation:turnBannerIn .62s ease both}
+  @keyframes turnBannerIn{0%{opacity:0;transform:translate(-50%,-14px) scale(.96)}22%,70%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,8px) scale(1.01)}}
+  .card-flight{position:fixed!important;z-index:98!important;margin:0!important;pointer-events:none!important;animation:cardFlight .39s cubic-bezier(.18,.78,.2,1) both!important;box-shadow:0 12px 28px rgba(0,0,0,.5),0 0 20px rgba(124,231,255,.35)!important}
+  @keyframes cardFlight{0%{opacity:.95;transform:translate(0,0) rotate(0) scale(1)}72%{opacity:.9;transform:translate(calc(var(--flight-x)*.83),calc(var(--flight-y)*.83)) rotate(5deg) scale(.68)}100%{opacity:0;transform:translate(var(--flight-x),var(--flight-y)) rotate(9deg) scale(.38)}}
+  .nitrogen-hud.n2-value-bump{animation:n2Bump .46s cubic-bezier(.2,1.45,.35,1)}.nitrogen-hud.n2-value-drop{animation:n2Drop .46s cubic-bezier(.2,1.35,.35,1)}
+  @keyframes n2Bump{0%{transform:scale(1)}42%{transform:scale(1.12);filter:brightness(1.45)}100%{transform:scale(1)}}@keyframes n2Drop{0%{transform:scale(1)}42%{transform:scale(.94);filter:brightness(1.35)}100%{transform:scale(1)}}
+  .particle-shard{border-radius:2px!important;transform:rotate(35deg)}.particle-bubble{border-radius:50%!important;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.35),transparent 36%)}
+  body.event-cinematic .game-content,body.event-cinematic .vertical-track{animation:eventCinematicFocus .9s ease both}@keyframes eventCinematicFocus{0%{filter:brightness(1)}28%{filter:brightness(.72) saturate(.82)}100%{filter:brightness(1)}}
+  .log-item{position:relative;padding-left:18px}.log-item::before{position:absolute;left:1px;top:4px;width:14px;text-align:center;opacity:.86}.log-surface::before{content:"⬆"}.log-wire::before{content:"⌁"}.log-decomp::before{content:"◌"}.log-dive::before{content:"⬇"}.log-explore::before{content:"⌕"}.log-bust::before{content:"!";color:#ff8d87;font-weight:950}.log-event::before{content:"✦";color:#ffe17a}.log-header::before,.log-round::before{content:""}
+  .audio-mixer-master{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0 10px}.audio-mixer{display:grid;gap:9px}.audio-mixer-row{display:grid;grid-template-columns:92px minmax(0,1fr) 42px;gap:8px;align-items:center;padding:7px 8px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(0,20,35,.26);font-size:.74rem}.audio-mixer-row input{width:100%;accent-color:#ffd45d}.audio-mixer-row output{text-align:right;color:#ffe995;font-variant-numeric:tabular-nums}.audio-mixer-note{margin-top:9px!important;font-size:.68rem!important;color:#b9dbea!important}
+  @media(prefers-reduced-motion:reduce){.score-popup,.turn-banner.show,.card-flight,.nitrogen-hud.n2-value-bump,.nitrogen-hud.n2-value-drop,body.event-cinematic .game-content,body.event-cinematic .vertical-track{animation:none!important}.card-flight{display:none!important}}
 `;document.head.appendChild(quickStyle);
 
 document.querySelectorAll(".action-btn[data-action]").forEach(button=>{
@@ -7438,6 +7634,6 @@ if(cancelActionBtn){
 els.playerRows?.addEventListener("click",event=>{const handZone=event.target.closest(".row-zone.is-human .hand-zone");if(!handZone||event.target.closest(".card"))return;const human=humanPlayer();if(!human||human.hand.length||activeHumanAction()!=="dive"||game.busy||game.gameOver)return;void executeHumanEmptyDiveChoice("deck");});
 document.getElementById("rulesBtn")?.addEventListener("click",()=>{els.rulesPanel.classList.toggle("open");});
 document.getElementById("newGameBtn")?.addEventListener("click",showQuickSetup);
-els.soundBtn?.addEventListener("click",()=>{const on=!(soundEnabled&&hapticEnabled);soundEnabled=on;hapticEnabled=on;saveSoundPreference();saveHapticPreference();updateSoundButton();if(soundEnabled)getAudioContext();else silenceDynamicAudio();});
+els.soundBtn?.addEventListener("click",()=>{if(soundEnabled)getAudioContext();openAudioMixer();});
 updateSoundButton();startAmbientSwimmers();showQuickSetup();
 </script></body></html>
