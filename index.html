@@ -1928,7 +1928,16 @@
 <main class="app">
 <header class="topbar"><h1>深海洞潛 Deep Dark Dive <span class="title-jp">ディープ．ダーク．ダイブ</span></h1><div class="top-actions"><button id="rulesBtn" class="btn" type="button">📖 規則</button><button id="soundBtn" class="btn" type="button">🔊📳</button><button id="newGameBtn" class="btn primary" type="button">↻ 新局</button></div></header>
 <div class="game-shell"><div class="game-content">
-<section id="rulesPanel" class="rules-panel"><h2>遊戲流程</h2><p>輪流選擇上浮、佈線、減壓、下潛、探勘其中一種行動。達到目標VP並完成該輪，或只剩一名玩家時結束。</p><p>注意手牌與減壓牌的總氮值不要超過 Max N₂；Max N₂ 降到3或以下會死亡。</p></section>
+<section id="rulesPanel" class="rules-panel" aria-label="遊戲規則">
+<h2>遊戲簡介</h2>
+<p>歡迎來到《深海洞潛》的世界，你必須善用你的手牌打出不同組合來得分，遊戲中注意手牌（原始氮值）和減壓牌（減壓氮值）左上角的氮值和不要超過你的氮上限，氮上限一開始為14，隨著遊戲進行而可能下降，卡牌右上角為分數，當有人完成目標分數且同輪所有人完成行動後結束。</p>
+<figure class="rules-figure"><img src="./images/card-01.png" alt="卡牌氮值與分數說明"></figure>
+<h2>遊戲流程</h2>
+<p>由起始玩家開始，選擇以下5種行動的1種，順時針輪流行動1次；當所有玩家完成一輪遊戲後，開始下一輪，遊戲進行到有玩家獲得目標分數且此輪所有玩家都完成行動，或只剩１名玩家後結束遊戲。</p>
+<figure class="rules-figure"><img src="./images/card-02.png" alt="五種行動流程圖"></figure>
+<h2>勝利條件</h2>
+<p>2人局目標16分，3人局目標14分，4人局目標12分，5人局目標10分，遊戲結束時，若只剩1名未出局玩家，則此玩家立即獲勝；否則由分數最高的玩家獲勝，若分數相同，依序比較：1.氮上限較高的玩家；2.氮值指示物在最上方的玩家。</p>
+</section>
 <section class="board">
 <aside class="vertical-track"><div class="track-head"><div class="track-head-group"><img src="./images/token-01.png" alt="VP"><span>VP</span></div><div class="track-head-group"><img src="./images/token-06.png" alt="Max N₂"><span>Max N₂</span></div></div><div id="trackScale" class="track-scale"><div class="track-lane score-lane"></div><div class="track-lane tank-lane"></div><div id="trackTarget" class="track-target"></div><div id="trackTokens" class="track-tokens"></div></div></aside>
 <div class="board-main">
