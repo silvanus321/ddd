@@ -1934,7 +1934,7 @@
 <div class="board-main">
 <div class="middle-row row-zone"><section id="publicZone" class="zone"><div class="zone-label"><strong>公共區</strong><span id="deckMeta" class="meta"></span></div><div id="publicCards" class="cards-row"></div></section><section id="discardZone" class="zone"><div class="zone-label"><strong>棄牌區</strong><span id="discardMeta" class="meta"></span></div><div id="discardPile" class="discard-stack"></div></section></div>
 <section id="actionDock" class="actions-panel board-actions-panel"><div class="action-buttons">
-<button class="action-btn" data-action="surface" aria-label="上浮" type="button"><img src="./images/action-01.png" alt=""></button><button class="action-btn" data-action="wire" aria-label="佈線" type="button"><img src="./images/action-02.png" alt=""></button><button class="action-btn" data-action="decomp" aria-label="減壓" type="button"><img src="./images/action-03.png" alt=""></button><button class="action-btn" data-action="dive" aria-label="下潛" type="button"><img src="./images/action-04.png" alt=""></button><button class="action-btn" data-action="explore" aria-label="探勘" type="button"><img src="./images/action-05.png" alt=""></button><button id="nextGameBtn" type="button"></button>
+<button class="action-btn" data-action="surface" aria-label="上浮" type="button"><img src="./images/action-01.png" alt=""></button><button class="action-btn" data-action="wire" aria-label="佈線" type="button"><img src="./images/action-02.png" alt=""></button><button class="action-btn" data-action="decomp" aria-label="減壓" type="button"><img src="./images/action-03.png" alt=""></button><button class="action-btn" data-action="dive" aria-label="下潛" type="button"><img src="./images/action-04.png" alt=""></button><button class="action-btn" data-action="explore" aria-label="探勘" type="button"><img src="./images/action-05.png" alt=""></button><button id="cancelActionBtn" class="action-btn utility-action" aria-label="取消" data-tooltip="取消目前選擇的牌或尚未完成的行動。" type="button"><span aria-hidden="true" style="font-size:1.65rem;line-height:1">↩</span><span>取消</span></button><button id="nextGameBtn" type="button"></button>
 </div><div id="actionInstruction" class="action-instruction">請選擇你的手牌或減壓牌再按行動按鈕</div><div id="actionHint" class="action-hint"></div><div id="scoreboard"></div></section>
 <div id="playerRows" class="player-rows"></div>
 <section class="control-panel"><aside class="log-panel"><div class="log-title"><strong>行動紀錄</strong><span id="roundMeta" class="muted"></span></div><div id="logList" class="log-list"></div></aside></section>
@@ -3047,6 +3047,12 @@ function renderPlayer(player){
 function render(){
   const human=humanPlayer(),humanTurn=currentPlayer()?.id===human?.id&&!game.busy&&!game.gameOver;game.players.forEach(renderPlayer);updateDynamicAudioState();const pending=Boolean(humanTurn&&game.pendingHumanExplore),emptyDive=Boolean(humanTurn&&activeHumanAction()==="dive"&&!(human?.hand?.length));renderRow(els.publicCards,game.public,{zone:"public",selectable:pending||emptyDive,emptyText:"公共區暫無牌"});els.publicZone?.classList.toggle("empty-dive-public-choice",emptyDive);renderDiscard(els.discardPile,game.discard);els.deckMeta.textContent=`${game.deck.length}張｜${activeColors().join("/")}`;els.discardMeta.textContent=`${game.discard.length}張`;els.roundMeta.textContent=`第${game.round}輪｜${game.players.length}人｜目標${game.targetScore}VP`;
   document.querySelectorAll(".action-btn[data-action]").forEach(btn=>{const action=btn.dataset.action,label=actionName(action),banned=Boolean(human?.banned?.includes(label)),ready=Boolean(humanTurn&&isActionSelectionReady(action)),active=Boolean(humanTurn&&activeHumanAction()===action);btn.disabled=!humanTurn||banned||!ready;btn.classList.toggle("action-active",active);btn.classList.toggle("action-ready",ready&&!banned);btn.dataset.tooltip=ACTION_TOOLTIPS[action]||label;btn.setAttribute("aria-label",label);});
+  const cancelBtn=document.getElementById("cancelActionBtn");
+  if(cancelBtn){
+    const hasCancelableState=Boolean(selectedItems().length || game.activeHumanAction || game.pendingHumanExplore);
+    cancelBtn.disabled=!humanTurn || game.busy || !hasCancelableState;
+    cancelBtn.classList.toggle("action-ready",Boolean(humanTurn&&!game.busy&&hasCancelableState));
+  }
   renderHint();renderLogs();renderTrack();
 }
 
@@ -3203,6 +3209,34 @@ function render(){
           }
         });
       }
+    }
+
+    function cancelHumanActionSelection() {
+      const human=humanPlayer();
+      if(!human || game.gameOver || game.busy || currentPlayer()?.id!==human.id) return;
+
+      // 若已進入探勘第二階段，尚未拿回公共牌前允許完整取消：
+      // 把第一階段已棄掉的牌從棄牌區取回手牌；LV3 暫留牌也一併復原。
+      const pending=game.pendingHumanExplore;
+      if(pending && pending.playerId===human.id){
+        const dropped=(pending.dropped||[]).slice();
+        removeCardsFromZone(game.discard,dropped);
+        const handIds=new Set((human.hand||[]).map(card=>card.id));
+        dropped.forEach(card=>{card.lockedBy=null;if(!handIds.has(card.id)){human.hand.push(card);handIds.add(card.id);}});
+        sortCards(human.hand);
+        clearActionAudit();
+      }
+
+      game.selected.clear();
+      game.selectionOrder=[];
+      game.activeHumanAction=null;
+      game.pendingHumanExplore=null;
+      game.pendingExplorePreviewTriggerId=null;
+      hoveredActionTooltip="";
+      setStatus(DEFAULT_ACTION_INSTRUCTION,"");
+      playGameSfx("select");
+      vibrateGame("select");
+      render();
     }
 
     function clearSelection(renderAfter = true) {
@@ -7359,6 +7393,14 @@ document.querySelectorAll(".action-btn[data-action]").forEach(button=>{
   button.addEventListener("focus",()=>{hoveredActionTooltip=button.dataset.tooltip||ACTION_TOOLTIPS[button.dataset.action]||"";refreshActionInstruction();});
   button.addEventListener("blur",()=>{hoveredActionTooltip="";refreshActionInstruction();});
 });
+const cancelActionBtn=document.getElementById("cancelActionBtn");
+if(cancelActionBtn){
+  cancelActionBtn.addEventListener("click",cancelHumanActionSelection);
+  cancelActionBtn.addEventListener("mouseenter",()=>{hoveredActionTooltip=cancelActionBtn.dataset.tooltip||"取消目前選擇。";refreshActionInstruction();});
+  cancelActionBtn.addEventListener("mouseleave",()=>{hoveredActionTooltip="";refreshActionInstruction();});
+  cancelActionBtn.addEventListener("focus",()=>{hoveredActionTooltip=cancelActionBtn.dataset.tooltip||"取消目前選擇。";refreshActionInstruction();});
+  cancelActionBtn.addEventListener("blur",()=>{hoveredActionTooltip="";refreshActionInstruction();});
+}
 els.playerRows?.addEventListener("click",event=>{const handZone=event.target.closest(".row-zone.is-human .hand-zone");if(!handZone||event.target.closest(".card"))return;const human=humanPlayer();if(!human||human.hand.length||activeHumanAction()!=="dive"||game.busy||game.gameOver)return;void executeHumanEmptyDiveChoice("deck");});
 document.getElementById("rulesBtn")?.addEventListener("click",()=>{els.rulesPanel.classList.toggle("open");});
 document.getElementById("newGameBtn")?.addEventListener("click",showQuickSetup);
