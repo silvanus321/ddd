@@ -1608,7 +1608,7 @@
     .hand-zone.pressure-dead { border-color:#8e98a2 !important; filter:grayscale(.72) brightness(.68); box-shadow:inset 0 0 0 2px rgba(255,255,255,.12) !important; }
     @keyframes pressureDangerPulse { from{filter:brightness(1)} to{filter:brightness(1.16)} }
     @keyframes pressureCriticalPulse { from{filter:brightness(1)} to{filter:brightness(1.34)} }
-    .track-token.score-token.event-armed { transform:translateY(50%) rotate(90deg); filter:drop-shadow(0 2px 4px rgba(0,0,0,.48)) drop-shadow(0 0 7px #ffd45d); }
+    .track-token.tank-token.event-armed { transform:translateY(50%) rotate(90deg); filter:drop-shadow(0 2px 4px rgba(0,0,0,.48)) drop-shadow(0 0 7px #ffd45d); }
     /* v235 探勘事件提示：只有「已選2張手牌並按下探勘」後，
        才在第一張棄牌中央短暫顯示「事件」，事件結算前公共牌不可選。 */
     .event-trigger-tag {
@@ -1714,6 +1714,10 @@
     }
     .topbar::before { display:none !important; content:none !important; }
     .topbar h1 { text-align:center; }
+    .title-jp { display:inline; }
+    @media (max-width:620px) {
+      .title-jp { display:block; margin-top:2px; }
+    }
     .top-actions {
       display:grid;
       grid-template-columns:repeat(4,minmax(0,1fr));
@@ -1922,7 +1926,7 @@
 </style></head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
-<header class="topbar"><h1>深海洞潛 Deep Dark Dive ディープ．ダーク．ダイブ</h1><div class="top-actions"><button id="rulesBtn" class="btn" type="button">📖 規則</button><button id="soundBtn" class="btn" type="button">🔊📳</button><button id="newGameBtn" class="btn primary" type="button">↻ 新局</button></div></header>
+<header class="topbar"><h1>深海洞潛 Deep Dark Dive <span class="title-jp">ディープ．ダーク．ダイブ</span></h1><div class="top-actions"><button id="rulesBtn" class="btn" type="button">📖 規則</button><button id="soundBtn" class="btn" type="button">🔊📳</button><button id="newGameBtn" class="btn primary" type="button">↻ 新局</button></div></header>
 <div class="game-shell"><div class="game-content">
 <section id="rulesPanel" class="rules-panel"><h2>遊戲流程</h2><p>輪流選擇上浮、佈線、減壓、下潛、探勘其中一種行動。達到目標VP並完成該輪，或只剩一名玩家時結束。</p><p>注意手牌與減壓牌的總氮值不要超過 Max N₂；Max N₂ 降到3或以下會死亡。</p></section>
 <section class="board">
@@ -1930,7 +1934,7 @@
 <div class="board-main">
 <div class="middle-row row-zone"><section id="publicZone" class="zone"><div class="zone-label"><strong>公共區</strong><span id="deckMeta" class="meta"></span></div><div id="publicCards" class="cards-row"></div></section><section id="discardZone" class="zone"><div class="zone-label"><strong>棄牌區</strong><span id="discardMeta" class="meta"></span></div><div id="discardPile" class="discard-stack"></div></section></div>
 <section id="actionDock" class="actions-panel board-actions-panel"><div class="action-buttons">
-<button class="action-btn" data-action="surface" aria-label="上浮" type="button">⬆️</button><button class="action-btn" data-action="wire" aria-label="佈線" type="button">🪢</button><button class="action-btn" data-action="decomp" aria-label="減壓" type="button">🫧</button><button class="action-btn" data-action="dive" aria-label="下潛" type="button">⬇️</button><button class="action-btn" data-action="explore" aria-label="探勘" type="button">🔎</button><button id="nextGameBtn" type="button"></button>
+<button class="action-btn" data-action="surface" aria-label="上浮" type="button"><img src="./images/action-01.png" alt=""></button><button class="action-btn" data-action="wire" aria-label="佈線" type="button"><img src="./images/action-02.png" alt=""></button><button class="action-btn" data-action="decomp" aria-label="減壓" type="button"><img src="./images/action-03.png" alt=""></button><button class="action-btn" data-action="dive" aria-label="下潛" type="button"><img src="./images/action-04.png" alt=""></button><button class="action-btn" data-action="explore" aria-label="探勘" type="button"><img src="./images/action-05.png" alt=""></button><button id="nextGameBtn" type="button"></button>
 </div><div id="actionInstruction" class="action-instruction">請選擇你的手牌或減壓牌再按行動按鈕</div><div id="actionHint" class="action-hint"></div><div id="scoreboard"></div></section>
 <div id="playerRows" class="player-rows"></div>
 <section class="control-panel"><aside class="log-panel"><div class="log-title"><strong>行動紀錄</strong><span id="roundMeta" class="muted"></span></div><div id="logList" class="log-list"></div></aside></section>
@@ -3098,7 +3102,6 @@ function render(){
         const displayedScore = missionMode ? playerMissionRescueScore(player) : player.score;
         const scoreIcon = document.createElement("img");
         scoreIcon.className = `track-token score-token${isCurrent ? " current" : ""}`;
-        if(player.lastTurnTriggeredEvent) scoreIcon.classList.add("event-armed");
         scoreIcon.src = theme.scoreIcon;
         scoreIcon.alt = missionMode ? `${player.name} 救援分數` : `${player.name} 分數`;
         scoreIcon.title = player.lastTurnTriggeredEvent
@@ -3109,8 +3112,11 @@ function render(){
         const tankIcon = document.createElement("img");
         tankIcon.className = `track-token tank-token${isCurrent ? " current" : ""}`;
         tankIcon.src = theme.tankIcon;
+        if(player.lastTurnTriggeredEvent) tankIcon.classList.add("event-armed");
         tankIcon.alt = `${player.name} 氮上限`;
-        tankIcon.title = `${player.name} 氮上限 ${player.maxPressure}`;
+        tankIcon.title = player.lastTurnTriggeredEvent
+          ? `${player.name}｜事件連鎖警告：上一個自己的正式回合已觸發事件；下一個自己的正式回合若再次觸發，事件結算後氮上限－1。`
+          : `${player.name} 氮上限 ${player.maxPressure}`;
         tankIcon.style.left = trackValueToLeft(player.maxPressure);
         tankIcon.style.top = `${45 + index * 3}px`;
         els.trackTokens.appendChild(scoreIcon);
@@ -7306,20 +7312,43 @@ function clearActionAudit(){game.actionAudit=null;}
 
 function quickShuffleCopy(list){const a=[...list];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function startQuickGame(playerCount){
-  const count=Math.max(2,Math.min(5,Number(playerCount)||2));const aiCodes=quickShuffleCopy(QUICK_AI_CODES).slice(0,count-1);const colorCount=2+Math.floor(Math.random()*4);const colors=randomColorSelection(colorCount);startMatch({playerCount:count,colors,seatControllers:["human",...aiCodes]});
+  const count=Math.max(2,Math.min(5,Number(playerCount)||2));
+  const aiCodes=quickShuffleCopy(QUICK_AI_CODES).slice(0,count-1);
+  // Quick Play：牌組顏色數固定等於玩家人數。2/3/4 人隨機抽同數量顏色；5 人使用全部 5 色。
+  const colors=count>=CONFIG.allColors.length ? [...CONFIG.allColors] : randomColorSelection(count);
+  startMatch({playerCount:count,colors,seatControllers:["human",...aiCodes]});
 }
 function showQuickSetup(){
-  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。AI將從排名第24–27名隨機選出；本局隨機使用2–5色牌組。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>`<button class="btn quick-player-btn" data-quick-count="${n}" type="button"><b>${n} 人</b><small>${n-1} 名 AI</small></button>`).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
+  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。AI將從排名第24–27名隨機選出；2人隨機2色、3人隨機3色、4人隨機4色、5人使用全部5色。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>`<button class="btn quick-player-btn" data-quick-count="${n}" type="button"><b>${n} 人</b><small>${n-1} 名 AI</small></button>`).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
 }
 
 
-function addRoundStateLog(initial=false){addLog(`${initial?"開局":"第"+game.round+"輪"}｜公共：${game.public.map(cardLabel).join("、")||"無"}`,true);}
+function addRoundStateLog(initial=false){
+  const parts=[`第${game.round}輪｜公共：${game.public.map(cardLabel).join("、")||"無"}`];
+  [...(game.players||[])].sort((a,b)=>(a.seatIndex||0)-(b.seatIndex||0)).forEach(player=>{
+    const hand=(player.hand||[]).map(cardLabel).join(",")||"無";
+    const decomp=(player.decomp||[]).map(cardLabel).join(",")||"無";
+    parts.push(`${player.name}：${hand}|${decomp}`);
+  });
+  addLog(parts.join("｜"),true);
+}
 
 
 const quickStyle=document.createElement("style");quickStyle.textContent=`
   .quick-setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}.quick-player-btn{min-height:72px;display:grid;place-items:center;gap:2px}.quick-player-btn b{font-size:1.12rem}.quick-player-btn small{opacity:.72}.quick-ai-note{text-align:center;color:var(--muted);font-size:.72rem;margin-top:8px}.quick-result-list{display:grid;gap:7px}.quick-result-list>div{display:flex;justify-content:space-between;gap:10px;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(0,20,40,.26)}
   #scoreboard,#nextGameBtn{display:none!important}#publicZone,#discardZone{background:rgba(242,247,255,.42)!important;backdrop-filter:blur(2px)}
-  @media(min-width:900px){.app{width:min(1180px,100%)}.player-rows{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.player-rows .row-zone{min-width:0}.game-shell{grid-template-columns:84px minmax(0,1fr)}}
+  /* v102：公共區多留 8px 安全寬度，避免 3 張牌＋間距剛好卡到 overflow 臨界值。 */
+  .middle-row{grid-template-columns:calc(var(--card-w) * 3 + 34px) minmax(0,1fr)}
+  #publicCards{overflow-x:hidden}
+  @media(min-width:900px){
+    .app{width:min(1180px,100%)}
+    .player-rows{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;overflow-x:hidden}
+    /* 桌機玩家列改為彈性寬度；減壓區比前版多 8px，整列不再以 max-content 撐出橫向捲軸。 */
+    .player-rows .row-zone{grid-template-columns:minmax(0,1fr) calc(var(--decomp-w) + 22px);width:100%;max-width:100%;min-width:0}
+    .player-rows .hand-zone{width:auto;min-width:0}
+    .player-rows .decomp-zone{width:calc(var(--decomp-w) + 22px);min-width:calc(var(--decomp-w) + 22px)}
+    .game-shell{grid-template-columns:84px minmax(0,1fr)}
+  }
   @media(max-width:899px){.player-rows{grid-template-columns:1fr}}
 `;document.head.appendChild(quickStyle);
 
