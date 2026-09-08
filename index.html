@@ -4768,8 +4768,21 @@ async function finishAction(player,summary,actionKind=""){
       game.public.forEach(card => { if (card.lockedBy === player.id) card.lockedBy = null; });
     }
 
+    // 禁止事件（LV3）持續到「觸發此事件的玩家」下一次輪到自己時才解除。
+    // 不以整輪結束作為解除時點，避免不同順位時效果長短不一致。
+    function releaseBanHoldsAtSourceNextTurn(player) {
+      if(!player) return;
+      const expired=(game.banEventHolds||[]).filter(hold=>
+        hold.sourcePlayerId===player.id &&
+        Number(hold.appliedAtGlobalTurn??-1) < Number(game.globalTurn||0)
+      );
+      if(!expired.length) return;
+      expired.forEach(releaseBanHold);
+      addLog(`${player.name}先前觸發的禁止事件效果解除。`,true);
+    }
+
 async function advanceTurn(){
-  const prev=game.currentIndex;let wrapped=false;do{const next=(game.currentIndex+1)%game.players.length;if(next<=game.currentIndex)wrapped=true;game.currentIndex=next;}while(currentPlayer()?.eliminated&&game.currentIndex!==prev);if(wrapped){if(game.endPending){endGame();return;}game.round+=1;addRoundStateLog(false);}const next=currentPlayer();unlockCardsFor(next);setStatus(`第${game.round}輪，輪到${next.name}。`,"ok");render();if(next.isAI){await sleep(420);await runAITurn(next);}
+  const prev=game.currentIndex;let wrapped=false;do{const next=(game.currentIndex+1)%game.players.length;if(next<=game.currentIndex)wrapped=true;game.currentIndex=next;}while(currentPlayer()?.eliminated&&game.currentIndex!==prev);if(wrapped){if(game.endPending){endGame();return;}game.round+=1;addRoundStateLog(false);}const next=currentPlayer();releaseBanHoldsAtSourceNextTurn(next);unlockCardsFor(next);setStatus(`第${game.round}輪，輪到${next.name}。`,"ok");render();if(next.isAI){await sleep(420);await runAITurn(next);}
 }
 
     function chooseUniversalImmediateWinningScore(player) {
@@ -7359,10 +7372,12 @@ function startQuickGame(playerCount){
   const aiCodes=quickShuffleCopy(QUICK_AI_CODES).slice(0,count-1);
   // Quick Play：牌組顏色數固定等於玩家人數。2/3/4 人隨機抽同數量顏色；5 人使用全部 5 色。
   const colors=count>=CONFIG.allColors.length ? [...CONFIG.allColors] : randomColorSelection(count);
-  startMatch({playerCount:count,colors,seatControllers:["human",...aiCodes]});
+  // v111：每次開局把真人與 AI 一起洗牌，隨機決定座位與起始玩家。
+  const seatControllers=quickShuffleCopy(["human",...aiCodes]);
+  startMatch({playerCount:count,colors,seatControllers});
 }
 function showQuickSetup(){
-  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。AI將從排名第24–27名隨機選出；2人隨機2色、3人隨機3色、4人隨機4色、5人使用全部5色。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>`<button class="btn quick-player-btn" data-quick-count="${n}" type="button"><b>${n} 人</b><small>${n-1} 名 AI</small></button>`).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
+  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。每次開局所有玩家順位隨機；AI將從排名第24–27名隨機選出；2人隨機2色、3人隨機3色、4人隨機4色、5人使用全部5色。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>`<button class="btn quick-player-btn" data-quick-count="${n}" type="button"><b>${n} 人</b><small>${n-1} 名 AI</small></button>`).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
 }
 
 
