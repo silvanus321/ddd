@@ -2,6 +2,7 @@
 <!-- v113: fix random-seat AI starter auto-turn; verify human hand/decomp selection and decomp surface -->
 <!-- v114: audiovisual juice upgrade; presentation-only additions, no rules/AI/win-condition changes -->
 <!-- v117: N2 heartbeat dynamically gets louder and faster as nitrogen rises; final tension unchanged -->
+<!-- v119: music separated from SFX+haptics; heartbeat haptics synchronized to recorded heartbeat pulses -->
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
     :root {
       --bg-deep: #08357E;
@@ -1926,10 +1927,13 @@
       }
     }
 
+
+.quick-player-btn.quick-player-locked{opacity:.42;filter:grayscale(.75);cursor:not-allowed;box-shadow:none!important;}
+.quick-player-btn.quick-player-locked small{font-weight:800;}
 </style></head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
-<header class="topbar"><h1>深海洞潛 Deep Dark Dive <span class="title-jp">ディープ．ダーク．ダイブ</span></h1><div class="top-actions"><button id="rulesBtn" class="btn" type="button">📖 規則</button><button id="soundBtn" class="btn" type="button">🔊📳</button><button id="newGameBtn" class="btn primary" type="button">↻ 新局</button></div></header>
+<header class="topbar"><h1>深海洞潛 Deep Dark Dive <span class="title-jp">ディープ．ダーク．ダイブ</span></h1><div class="top-actions"><button id="rulesBtn" class="btn" type="button">📖 規則</button><button id="musicBtn" class="btn" type="button" aria-label="音樂設定">🎵</button><button id="soundBtn" class="btn" type="button" aria-label="音效與震動設定">🔊📳</button><button id="newGameBtn" class="btn primary" type="button">↻ 新局</button></div></header>
 <div class="game-shell"><div class="game-content">
 <section id="rulesPanel" class="rules-panel" aria-label="遊戲規則">
 <h2>遊戲簡介</h2>
@@ -2043,7 +2047,7 @@ const els = {
   playerRows:document.getElementById("playerRows"), publicZone:document.getElementById("publicZone"), publicCards:document.getElementById("publicCards"),
   discardPile:document.getElementById("discardPile"), deckMeta:document.getElementById("deckMeta"), discardMeta:document.getElementById("discardMeta"),
   roundMeta:document.getElementById("roundMeta"), logList:document.getElementById("logList"), actionHint:document.getElementById("actionHint"),
-  actionInstruction:document.getElementById("actionInstruction"), scoreboard:document.getElementById("scoreboard"), soundBtn:document.getElementById("soundBtn"),
+  actionInstruction:document.getElementById("actionInstruction"), scoreboard:document.getElementById("scoreboard"), musicBtn:document.getElementById("musicBtn"), soundBtn:document.getElementById("soundBtn"),
   eventFx:document.getElementById("eventFx"), eventParticles:document.getElementById("eventParticles"), eventFxImage:document.getElementById("eventFxImage"),
   eventFxName:document.getElementById("eventFxName"), eventFxSource:document.getElementById("eventFxSource"), actionFx:document.getElementById("actionFx"),
   actionParticles:document.getElementById("actionParticles"), actionFxIcon:document.getElementById("actionFxIcon"), actionFxKicker:document.getElementById("actionFxKicker"),
@@ -2345,6 +2349,17 @@ function missionLv3DurationRounds(){return 1;}
       try{localStorage.setItem("deepDiveAudioMixerV114",JSON.stringify(audioMixer));}catch(_){/* storage unavailable */}
     }
 
+    function readMusicPreference() {
+      try { return localStorage.getItem("deepDiveMusic") !== "off"; }
+      catch (_) { return true; }
+    }
+
+    function saveMusicPreference() {
+      try { localStorage.setItem("deepDiveMusic", musicEnabled ? "on" : "off"); }
+      catch (_) { /* storage unavailable */ }
+    }
+
+    let musicEnabled = readMusicPreference();
     let soundEnabled = readSoundPreference();
     let audioMixer=readAudioMixerPreference();
     let audioContext = null, audioBuses=null;
@@ -2363,22 +2378,26 @@ function missionLv3DurationRounds(){return 1;}
       if(audioBuses){
         const now=audioBuses.ctx.currentTime;
         audioBuses.sfx.gain.setTargetAtTime(soundEnabled?Math.max(.0001,audioMixer.sfx):.0001,now,.04);
-        audioBuses.music.gain.setTargetAtTime(soundEnabled?Math.max(.0001,audioMixer.music):.0001,now,.08);
+        audioBuses.music.gain.setTargetAtTime(musicEnabled?Math.max(.0001,audioMixer.music):.0001,now,.08);
       }
       saveAudioMixerPreference();
     }
 
     function updateSoundButton() {
-      if (!els.soundBtn) return;
-      const bothEnabled = soundEnabled && hapticEnabled;
-      const anyEnabled = soundEnabled || hapticEnabled;
-      els.soundBtn.textContent = bothEnabled ? "🔊📳" : anyEnabled ? "🔊/📳" : "🔇📴";
-      els.soundBtn.setAttribute("aria-pressed", String(bothEnabled));
-      els.soundBtn.title = "聲光設定";
+      if (els.musicBtn) {
+        els.musicBtn.textContent = musicEnabled ? "🎵" : "🎵✕";
+        els.musicBtn.setAttribute("aria-pressed", String(musicEnabled));
+        els.musicBtn.title = "音樂設定";
+      }
+      if (els.soundBtn) {
+        els.soundBtn.textContent = soundEnabled ? "🔊📳" : "🔇📴";
+        els.soundBtn.setAttribute("aria-pressed", String(soundEnabled));
+        els.soundBtn.title = "音效與震動設定";
+      }
     }
 
     function getAudioContext() {
-      if (!soundEnabled) return null;
+      if (!soundEnabled && !musicEnabled) return null;
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return null;
       if (!audioContext) audioContext = new AudioCtx();
@@ -2472,9 +2491,13 @@ function missionLv3DurationRounds(){return 1;}
           source.start(startAt);
           layer.source=source;
           layer.duration=buffer.duration;
+          layer.startedAt=startAt;
+          if(key==='heartbeat'){music.heartbeatRate=1;music.heartbeatGain=0;}
         }
         music.ready=true;
         music.loading=false;
+        heartbeatHapticPhase=0;heartbeatHapticLastMs=performance.now();
+        ensureHeartbeatHapticSync();
         updateDynamicAudioState();
       }catch(err){
         music.loading=false;
@@ -2497,7 +2520,7 @@ function missionLv3DurationRounds(){return 1;}
         sonar:mkLayer(),
         heartbeat:mkLayer(),
         finalTension:mkLayer(),
-        phase:'explore',ready:false,loading:false,failed:false
+        phase:'explore',ready:false,loading:false,failed:false,heartbeatRate:1,heartbeatGain:0
       };
       loadRecordedDynamicMusic(dynamicMusic);
       return dynamicMusic;
@@ -2523,7 +2546,7 @@ function missionLv3DurationRounds(){return 1;}
     function startChampionshipBeat(){/* v115：冠軍戰直接提高 final_tension，不再疊加額外合成鼓點。 */}
 
     function updateDynamicAudioState(){
-      if(!soundEnabled || game.fastMode || game.simulationMode){silenceDynamicAudio();return;}
+      if(!musicEnabled || game.fastMode || game.simulationMode){silenceDynamicAudio();return;}
       const music=ensureDynamicMusic();
       if(!music)return;
       const state=dynamicThreatState(),now=music.ctx.currentTime;
@@ -2540,9 +2563,10 @@ function missionLv3DurationRounds(){return 1;}
 
       const n2Ratio=Math.max(0,Math.min(1.15,state.maxRatio));
       let heartbeatGain=.0001;
-      if(n2Ratio>.58)heartbeatGain=Math.min(.96,((n2Ratio-.58)/.42)*.96);
-      if(state.nearLimit)heartbeatGain=Math.max(heartbeatGain,.76);
+      if(n2Ratio>.58)heartbeatGain=Math.min(1.28,((n2Ratio-.58)/.42)*1.28);
+      if(state.nearLimit)heartbeatGain=Math.max(heartbeatGain,1.02);
       set(music.heartbeat,heartbeatGain,.32);
+      music.heartbeatGain=heartbeatGain;
 
       // N₂ 越高，錄製心跳軌播放越快；低氮時維持原速，高危險區明顯加速。
       if(music.heartbeat?.source?.playbackRate){
@@ -2554,6 +2578,7 @@ function missionLv3DurationRounds(){return 1;}
         if(state.nearLimit)heartbeatRate=Math.max(heartbeatRate,1.38);
         if(n2Ratio>=1)heartbeatRate=Math.max(heartbeatRate,1.55);
         music.heartbeat.source.playbackRate.setTargetAtTime(heartbeatRate,now,.28);
+        music.heartbeatRate=heartbeatRate;
       }
 
       let finalGain=.0001;
@@ -2568,6 +2593,43 @@ function missionLv3DurationRounds(){return 1;}
         const root=phase==='explore'?220:phase==='race'?293.66:392;
         playMusicTone(music.ctx,root,now+.03,.20,'triangle',.008);
       }
+    }
+
+    // v119：依照錄製 n2_heartbeat 的實際雙拍位置，同步觸發手機震動。
+    // 原始 17.455 秒循環的心跳峰值約在 0.15/0.43、4.51/4.79、8.73/9.01、13.23/13.51 秒。
+    const HEARTBEAT_PULSE_POSITIONS=[.15,.43,4.51,4.79,8.73,9.01,13.23,13.51];
+    let heartbeatHapticTimer=null,heartbeatHapticPhase=0,heartbeatHapticLastMs=0,heartbeatHapticNextIndex=0;
+
+    function stopHeartbeatHapticSync(){
+      if(heartbeatHapticTimer){clearInterval(heartbeatHapticTimer);heartbeatHapticTimer=null;}
+      heartbeatHapticLastMs=0;heartbeatHapticPhase=0;heartbeatHapticNextIndex=0;
+    }
+
+    function triggerHeartbeatHaptic(){
+      if(!soundEnabled || !hapticEnabled || audioMixer.haptic<=0 || game.fastMode || game.simulationMode || typeof navigator==='undefined' || typeof navigator.vibrate!=='function')return;
+      const gain=Math.max(0,Number(dynamicMusic?.heartbeatGain)||0);
+      if(gain<.08)return;
+      const strength=Math.max(.25,Math.min(1,Number(audioMixer.haptic)||1));
+      const danger=Math.max(0,Math.min(1,gain/1.28));
+      const ms=Math.round((26 + danger*54)*strength);
+      try{navigator.vibrate(ms);}catch(_){/* unsupported */}
+    }
+
+    function ensureHeartbeatHapticSync(){
+      if(heartbeatHapticTimer)return;
+      heartbeatHapticLastMs=performance.now();
+      heartbeatHapticTimer=setInterval(()=>{
+        const nowMs=performance.now(),dt=Math.max(0,Math.min(.15,(nowMs-heartbeatHapticLastMs)/1000));
+        heartbeatHapticLastMs=nowMs;
+        const music=dynamicMusic;
+        if(!music?.ready || !music.heartbeat?.duration || !musicEnabled){return;}
+        const dur=music.heartbeat.duration;
+        const rate=Math.max(.5,Math.min(2,Number(music.heartbeatRate)||1));
+        const prev=heartbeatHapticPhase;
+        heartbeatHapticPhase=(heartbeatHapticPhase + dt*rate)%dur;
+        const crossed=(beat)=> prev<=heartbeatHapticPhase ? (beat>prev&&beat<=heartbeatHapticPhase) : (beat>prev||beat<=heartbeatHapticPhase);
+        for(const beat of HEARTBEAT_PULSE_POSITIONS){if(beat<dur && crossed(beat))triggerHeartbeatHaptic();}
+      },28);
     }
 
     function silenceDynamicAudio(){
@@ -2588,22 +2650,23 @@ function missionLv3DurationRounds(){return 1;}
       catch (_) { /* storage unavailable */ }
     }
 
-    let hapticEnabled = readHapticPreference();
+    let hapticEnabled = soundEnabled;
 
     function vibrateGame(kind) {
-      if (!hapticEnabled || audioMixer.haptic<=0 || game.fastMode || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+      if (!soundEnabled || !hapticEnabled || audioMixer.haptic<=0 || game.fastMode || typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
       const patterns = {
-        select: 9,                         // 輕震：選牌
-        dive: 16, explore: 18, decomp: 18, wire: 20,
-        surface: 34, score: 38,           // 中震：得分
-        event: [72, 34, 88],              // 強震：重大事件
-        bust: [125, 48, 165],             // 強震：氮醉
-        win: [55, 55, 55]                 // 雙／節奏震：勝利
+        select: 15,                        // 輕震：選牌
+        dive: 28, explore: 32, decomp: 32, wire: 36,
+        surface: 55, score: 65,           // 中震：得分
+        event: [105, 42, 125],            // 強震：重大事件
+        bust: [180, 60, 230],             // 強震：氮醉
+        win: [85, 55, 85, 55, 120]        // 節奏震：勝利
       };
       try {
-        const strength=Math.max(.15,Math.min(1,Number(audioMixer.haptic)||0));
-        const raw=patterns[kind] || 12;
-        const scaled=Array.isArray(raw)?raw.map((n,i)=>i%2?n:Math.max(1,Math.round(n*strength))):Math.max(1,Math.round(raw*strength));
+        const strength=Math.max(.20,Math.min(1,Number(audioMixer.haptic)||0));
+        const boost=1.35;
+        const raw=patterns[kind] || 20;
+        const scaled=Array.isArray(raw)?raw.map((n,i)=>i%2?n:Math.max(1,Math.round(n*strength*boost))):Math.max(1,Math.round(raw*strength*boost));
         navigator.vibrate(scaled);
       } catch (_) { /* unsupported */ }
     }
@@ -7336,18 +7399,25 @@ function endGame(){
       const btn=document.createElement("button"); btn.type="button"; btn.className=className; btn.textContent=text; btn.addEventListener("click",handler); return btn;
     }
 
+    function openMusicSettings(){
+      const modal=els.modalBackdrop.querySelector(".modal");modal?.classList.remove("mode-home-modal");
+      els.modalTitle.textContent="音樂設定";els.modalText.textContent="控制深海動態配樂；N₂ 心跳與終局張力仍會依局勢自動變化。";
+      els.modalBody.innerHTML=`<div class="audio-mixer-master"><button type="button" class="btn ${musicEnabled?"primary":""}" id="musicMasterToggle">${musicEnabled?"音樂：開":"音樂：關"}</button></div><div class="audio-mixer"><label class="audio-mixer-row"><span>🎵 音樂</span><input type="range" min="0" max="100" step="1" value="${Math.round((audioMixer.music??0)*100)}" id="musicVolume"><output>${Math.round((audioMixer.music??0)*100)}%</output></label></div><p class="audio-mixer-note">🎧 Base、Sonar、N₂ 心跳與 Final Tension 由遊戲自動混音。</p>`;
+      els.modalActions.innerHTML="";els.modalError.textContent="";els.modalActions.appendChild(makeButton("完成","btn primary",closeModal));els.modalBackdrop.classList.add("open");
+      const refresh=()=>{const b=document.getElementById("musicMasterToggle");if(b){b.textContent=musicEnabled?"音樂：開":"音樂：關";b.classList.toggle("primary",musicEnabled);}};
+      document.getElementById("musicMasterToggle")?.addEventListener("click",()=>{musicEnabled=!musicEnabled;saveMusicPreference();applyAudioMixer();updateSoundButton();if(musicEnabled){getAudioContext();updateDynamicAudioState();ensureHeartbeatHapticSync();}else{silenceDynamicAudio();}refresh();});
+      document.getElementById("musicVolume")?.addEventListener("input",e=>{audioMixer.music=Number(e.target.value)/100;e.target.parentElement.querySelector("output").textContent=`${e.target.value}%`;applyAudioMixer();});
+    }
+
     function openAudioMixer(){
       const modal=els.modalBackdrop.querySelector(".modal");modal?.classList.remove("mode-home-modal");
-      els.modalTitle.textContent="聲光設定";els.modalText.textContent="音樂、效果音、語音提示與震動可分開調整；設定會保存在此裝置。";
-      const rows=[
-        ["music","🎵 音樂"],["sfx","🔊 SFX / UI"],["voice","🗣️ 語音提示"],["haptic","📳 震動強度"]
-      ];
-      els.modalBody.innerHTML=`<div class="audio-mixer-master"><button type="button" class="btn ${soundEnabled?"primary":""}" id="audioMasterToggle">${soundEnabled?"聲音：開":"聲音：關"}</button><button type="button" class="btn ${hapticEnabled?"primary":""}" id="hapticMasterToggle">${hapticEnabled?"震動：開":"震動：關"}</button></div><div class="audio-mixer">${rows.map(([key,label])=>`<label class="audio-mixer-row"><span>${label}</span><input type="range" min="0" max="100" step="1" value="${Math.round((audioMixer[key]??0)*100)}" data-audio-key="${key}"><output>${Math.round((audioMixer[key]??0)*100)}%</output></label>`).join("")}</div><p class="audio-mixer-note">🎧 已使用自製深海動態配樂：Deep Base／Sonar／N₂ Heartbeat／Final Tension。快速模式仍保留極簡選牌／錯誤提示音；其餘音樂與演出自動降級。</p>`;
+      els.modalTitle.textContent="音效／震動設定";els.modalText.textContent="效果音與震動共用一個開關；關閉音效時，操作震動與 N₂ 心跳震動也會一起關閉。";
+      els.modalBody.innerHTML=`<div class="audio-mixer-master"><button type="button" class="btn ${soundEnabled?"primary":""}" id="audioMasterToggle">${soundEnabled?"音效＋震動：開":"音效＋震動：關"}</button></div><div class="audio-mixer"><label class="audio-mixer-row"><span>🔊 音效</span><input type="range" min="0" max="100" step="1" value="${Math.round((audioMixer.sfx??0)*100)}" id="sfxVolume"><output>${Math.round((audioMixer.sfx??0)*100)}%</output></label><label class="audio-mixer-row"><span>📳 震動</span><input type="range" min="0" max="100" step="1" value="${Math.round((audioMixer.haptic??1)*100)}" id="hapticStrength"><output>${Math.round((audioMixer.haptic??1)*100)}%</output></label></div><p class="audio-mixer-note">💓 N₂ 心跳音越快時，震動也會依同一組雙拍節奏同步加快。</p>`;
       els.modalActions.innerHTML="";els.modalError.textContent="";els.modalActions.appendChild(makeButton("完成","btn primary",closeModal));els.modalBackdrop.classList.add("open");
-      const refreshMaster=()=>{const a=document.getElementById("audioMasterToggle"),h=document.getElementById("hapticMasterToggle");if(a){a.textContent=soundEnabled?"聲音：開":"聲音：關";a.classList.toggle("primary",soundEnabled);}if(h){h.textContent=hapticEnabled?"震動：開":"震動：關";h.classList.toggle("primary",hapticEnabled);}};
-      document.getElementById("audioMasterToggle")?.addEventListener("click",()=>{soundEnabled=!soundEnabled;saveSoundPreference();applyAudioMixer();updateSoundButton();if(soundEnabled)getAudioContext();else silenceDynamicAudio();refreshMaster();});
-      document.getElementById("hapticMasterToggle")?.addEventListener("click",()=>{hapticEnabled=!hapticEnabled;saveHapticPreference();updateSoundButton();refreshMaster();});
-      els.modalBody.querySelectorAll("[data-audio-key]").forEach(input=>input.addEventListener("input",()=>{const key=input.dataset.audioKey;audioMixer[key]=Number(input.value)/100;input.parentElement.querySelector("output").textContent=`${input.value}%`;applyAudioMixer();if(key==="sfx"&&Number(input.value)>0)playGameSfx("select");if(key==="haptic"&&Number(input.value)>0)vibrateGame("select");}));
+      const refresh=()=>{const a=document.getElementById("audioMasterToggle");if(a){a.textContent=soundEnabled?"音效＋震動：開":"音效＋震動：關";a.classList.toggle("primary",soundEnabled);}};
+      document.getElementById("audioMasterToggle")?.addEventListener("click",()=>{soundEnabled=!soundEnabled;hapticEnabled=soundEnabled;saveSoundPreference();saveHapticPreference();applyAudioMixer();updateSoundButton();if(soundEnabled){getAudioContext();playGameSfx("select");vibrateGame("select");ensureHeartbeatHapticSync();}refresh();});
+      document.getElementById("sfxVolume")?.addEventListener("input",e=>{audioMixer.sfx=Number(e.target.value)/100;e.target.parentElement.querySelector("output").textContent=`${e.target.value}%`;applyAudioMixer();if(Number(e.target.value)>0)playGameSfx("select");});
+      document.getElementById("hapticStrength")?.addEventListener("input",e=>{audioMixer.haptic=Number(e.target.value)/100;e.target.parentElement.querySelector("output").textContent=`${e.target.value}%`;saveAudioMixerPreference();if(Number(e.target.value)>0)vibrateGame("score");});
     }
 
     function closeModal() {
@@ -7627,7 +7697,7 @@ function startQuickGame(playerCount){
   startMatch({playerCount:count,colors,seatControllers});
 }
 function showQuickSetup(){
-  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。每次開局所有玩家順位隨機；AI將從排名第24–27名隨機選出；2人隨機2色、3人隨機3色、4人隨機4色、5人使用全部5色。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>`<button class="btn quick-player-btn" data-quick-count="${n}" type="button"><b>${n} 人</b><small>${n-1} 名 AI</small></button>`).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
+  game.gameOver=true;game.busy=false;els.modalTitle.textContent="深海洞潛";els.modalText.textContent="選擇玩家人數即可開始單局。每次開局所有玩家順位隨機；AI將從排名第24–27名隨機選出；目前開放 2 人與 3 人遊戲，4 人與 5 人暫未開放。";els.modalBody.innerHTML=`<div class="quick-setup-grid">${[2,3,4,5].map(n=>{const locked=n>=4;return `<button class="btn quick-player-btn${locked?" quick-player-locked":""}" data-quick-count="${n}" type="button" ${locked?"disabled aria-disabled=\"true\"":""}><b>${n} 人</b><small>${locked?"🔒 暫未開放":`${n-1} 名 AI`}</small></button>`;}).join("")}</div><div class="quick-ai-note">AI池：II 人魚・I 飛魚・I 河童・I 水怪</div>`;els.modalActions.innerHTML="";els.modalError.textContent="";els.modalBackdrop.classList.add("open");els.modalBody.querySelectorAll("[data-quick-count]:not([disabled])").forEach(btn=>btn.addEventListener("click",()=>startQuickGame(Number(btn.dataset.quickCount))));
 }
 
 
@@ -7697,6 +7767,6 @@ if(cancelActionBtn){
 els.playerRows?.addEventListener("click",event=>{const handZone=event.target.closest(".row-zone.is-human .hand-zone");if(!handZone||event.target.closest(".card"))return;const human=humanPlayer();if(!human||human.hand.length||activeHumanAction()!=="dive"||game.busy||game.gameOver)return;void executeHumanEmptyDiveChoice("deck");});
 document.getElementById("rulesBtn")?.addEventListener("click",()=>{els.rulesPanel.classList.toggle("open");});
 document.getElementById("newGameBtn")?.addEventListener("click",showQuickSetup);
-els.soundBtn?.addEventListener("click",()=>{if(soundEnabled)getAudioContext();openAudioMixer();});
+els.musicBtn?.addEventListener("click",()=>{if(musicEnabled)getAudioContext();openMusicSettings();}); els.soundBtn?.addEventListener("click",()=>{if(soundEnabled)getAudioContext();openAudioMixer();});
 updateSoundButton();startAmbientSwimmers();showQuickSetup();
 </script></body></html>
