@@ -1,7 +1,7 @@
 <!-- DDD Quick Play v101: 探勘選足公共牌自動完成，事件延後至換牌完成後觸發 -->
 <!-- v113: fix random-seat AI starter auto-turn; verify human hand/decomp selection and decomp surface -->
 <!-- v114: audiovisual juice upgrade; presentation-only additions, no rules/AI/win-condition changes -->
-<!-- v116: audio balance tuning: quieter opening, stronger N2 heartbeat, final tension unchanged -->
+<!-- v117: N2 heartbeat dynamically gets louder and faster as nitrogen rises; final tension unchanged -->
 <!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
     :root {
       --bg-deep: #08357E;
@@ -2540,9 +2540,21 @@ function missionLv3DurationRounds(){return 1;}
 
       const n2Ratio=Math.max(0,Math.min(1.15,state.maxRatio));
       let heartbeatGain=.0001;
-      if(n2Ratio>.58)heartbeatGain=Math.min(.92,((n2Ratio-.58)/.42)*.92);
-      if(state.nearLimit)heartbeatGain=Math.max(heartbeatGain,.72);
-      set(music.heartbeat,heartbeatGain,.38);
+      if(n2Ratio>.58)heartbeatGain=Math.min(.96,((n2Ratio-.58)/.42)*.96);
+      if(state.nearLimit)heartbeatGain=Math.max(heartbeatGain,.76);
+      set(music.heartbeat,heartbeatGain,.32);
+
+      // N₂ 越高，錄製心跳軌播放越快；低氮時維持原速，高危險區明顯加速。
+      if(music.heartbeat?.source?.playbackRate){
+        let heartbeatRate=1;
+        if(n2Ratio>.58){
+          const danger=Math.max(0,Math.min(1,(n2Ratio-.58)/.42));
+          heartbeatRate=1 + Math.pow(danger,1.15)*.55; // 1.00× → 1.55×
+        }
+        if(state.nearLimit)heartbeatRate=Math.max(heartbeatRate,1.38);
+        if(n2Ratio>=1)heartbeatRate=Math.max(heartbeatRate,1.55);
+        music.heartbeat.source.playbackRate.setTargetAtTime(heartbeatRate,now,.28);
+      }
 
       let finalGain=.0001;
       if(topProgress>.52)finalGain=Math.min(.62,((topProgress-.52)/.48)*.62);
