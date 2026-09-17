@@ -1,3 +1,4 @@
+<!-- v168: desktop hand scrolling keeps native card clicks; drag activates only after horizontal threshold -->
 <!-- v167: global/local leaderboard + globally unique player names + desktop horizontal hand scrolling -->
 <!-- DDD Quick Play v133: cover home 2x2 modes + all competitive modes random unique AI opponents + 27 AI defeat roars -->
 <!-- DDD Quick Play v135: startup player profile (name/victory quote/defeat roar); General Match merges solo+quick into 1–5 players; four-mode home with six-round tutorial entry reserved -->
@@ -22672,7 +22673,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 </script>
 
 
-<script id="ddd-v167-desktop-card-scroll-script">
+<script id="ddd-v168-desktop-card-scroll-script">
 (()=>{
   const SCROLL_CLASS="ddd-scrollable-row";
   let drag=null;
@@ -22721,33 +22722,36 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     event.preventDefault();
   },{passive:false,capture:true});
 
-  // Mouse drag to pan. A real drag suppresses the following card click; an ordinary click still selects a card.
+  // Mouse drag to pan. IMPORTANT: do not capture the pointer on pointerdown.
+  // A normal press/release must remain a native card click so card selection still works.
+  // Only movement beyond DRAG_THRESHOLD is treated as horizontal dragging.
+  const DRAG_THRESHOLD=8;
   document.addEventListener('pointerdown',event=>{
     if(event.pointerType!=='mouse' || event.button!==0) return;
     const row=event.target instanceof Element ? event.target.closest('.cards-row') : null;
     if(!row || row.scrollWidth <= row.clientWidth + 3) return;
-    drag={row,pointerId:event.pointerId,startX:event.clientX,startLeft:row.scrollLeft,moved:false};
-    try{row.setPointerCapture(event.pointerId);}catch(_){ }
+    drag={row,pointerId:event.pointerId,startX:event.clientX,startY:event.clientY,startLeft:row.scrollLeft,moved:false};
   },true);
 
   document.addEventListener('pointermove',event=>{
     if(!drag || event.pointerId!==drag.pointerId) return;
     const dx=event.clientX-drag.startX;
-    if(!drag.moved && Math.abs(dx)>=5){
+    const dy=event.clientY-drag.startY;
+    if(!drag.moved){
+      // Require a clearly horizontal gesture before taking over from normal card clicking.
+      if(Math.abs(dx)<DRAG_THRESHOLD || Math.abs(dx)<=Math.abs(dy)) return;
       drag.moved=true;
       drag.row.classList.add('ddd-dragging');
     }
-    if(!drag.moved) return;
     drag.row.scrollLeft=drag.startLeft-dx;
     event.preventDefault();
   },{capture:true,passive:false});
 
   function endDrag(event){
     if(!drag || (event?.pointerId!=null && event.pointerId!==drag.pointerId)) return;
-    const {row,pointerId,moved}=drag;
-    if(moved) suppressClickUntil=performance.now()+180;
+    const {row,moved}=drag;
+    if(moved) suppressClickUntil=performance.now()+220;
     row.classList.remove('ddd-dragging');
-    try{row.releasePointerCapture(pointerId);}catch(_){ }
     drag=null;
   }
   document.addEventListener('pointerup',endDrag,true);
