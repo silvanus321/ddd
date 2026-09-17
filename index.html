@@ -18,6 +18,7 @@
 <!-- v128: remove AI internal decision/explanation messages from action log; AI logic unchanged -->
 <!-- v129: add 27 AI victory declarations + role-themed victory effects; III 寧妙 quote updated per designer request -->
 <!-- v165: all playable modes use six external music/ MP3 tracks; recorded music is not embedded in HTML -->
+<!-- v166: Supabase global leaderboard + per-match cloud records + 5-button toolbar + larger home menu type -->
 <!DOCTYPE html><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
@@ -4487,10 +4488,49 @@
 <!-- v165 Supabase cloud sync: browser-safe publishable client -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+
+<style id="v166-online-leaderboard-ui">
+/* 首頁六項：提高標題與說明字級，但維持3x2配置。 */
+.mode-home-modal .v135-home .mode-home-name{
+  font-size:clamp(.82rem,2.25vw,1.06rem)!important;
+  line-height:1.08!important;
+}
+.mode-home-modal .v135-home .mode-home-desc{
+  font-size:clamp(.50rem,1.48vw,.70rem)!important;
+  line-height:1.14!important;
+}
+.mode-home-modal .v135-home .v135-mode-icon{
+  font-size:clamp(.76rem,1.95vw,1.04rem)!important;
+}
+
+/* 遊戲介面工具列固定5項同一排。 */
+.top-actions{
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  gap:4px!important;
+}
+.top-actions .btn{
+  min-width:0!important;
+  padding:7px 2px!important;
+  font-size:clamp(.62rem,2.05vw,.76rem)!important;
+  white-space:nowrap!important;
+}
+.top-actions #leaderboardBtn{font-weight:900!important;}
+@media(max-width:380px){
+  .top-actions{gap:3px!important;}
+  .top-actions .btn{font-size:.60rem!important;padding:7px 1px!important;}
+  .top-actions #leaderboardBtn{font-size:.58rem!important;}
+}
+
+/* 全球排行榜最後一欄（總積分）加強。 */
+.leaderboard-table th:last-child,
+.leaderboard-table td:last-child{font-weight:900;color:var(--accent);}
+</style>
+
 </head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
-<header class="topbar"><div class="game-brand"><img class="title-banner" src="./images/banner2-01.png" alt="Deep Dark Dive title banner"></div><div class="top-actions"><button id="leaderboardBtn" class="btn" type="button" aria-label="AI排行榜">🤖 AI</button><button id="musicBtn" class="btn" type="button" aria-label="音樂">🎵</button><button id="soundBtn" class="btn" type="button" aria-label="音效與震動設定">🔊📳</button><button id="languageBtn" class="btn language-flag-btn" type="button" aria-label="目前介面語言：中文；點擊切換語言">中文</button><button id="newGameBtn" class="btn primary" type="button" aria-label="新局" title="新局">↻</button></div><button id="bracketBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button></header>
+<header class="topbar"><div class="game-brand"><img class="title-banner" src="./images/banner2-01.png" alt="Deep Dark Dive title banner"></div><div class="top-actions"><button id="leaderboardBtn" class="btn" type="button" aria-label="排行榜">🏆 排行榜</button><button id="musicBtn" class="btn" type="button" aria-label="音樂">🎵</button><button id="soundBtn" class="btn" type="button" aria-label="音效與震動設定">🔊📳</button><button id="languageBtn" class="btn language-flag-btn" type="button" aria-label="目前介面語言：中文；點擊切換語言">中文</button><button id="newGameBtn" class="btn primary" type="button" aria-label="新局" title="新局">↻</button></div><button id="bracketBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button></header>
 <div class="game-shell"><div class="game-content">
 <section id="rulesPanel" class="rules-panel" aria-label="遊戲規則">
 <h2>遊戲簡介</h2>
@@ -6818,7 +6858,7 @@
       const count=careerResolvedUnlockCount(rec),points=careerTotalPoints(rec),next=careerNextUnlockPoints(rec),cap=careerLevelUnlockCount(rec);
       const prevReq=Math.max(0,(count-AI_UNLOCK_INITIAL)*AI_UNLOCK_STEP_POINTS);
       const pct=count>=cap?100:rankingClamp((points-prevReq)/AI_UNLOCK_STEP_POINTS,0,1)*100;
-      const tour=[12,16,24,32].map(size=>`${careerTournamentUnlocked(size)?"✅":"🔒"}${size}人`).join("　");
+      const tour=[12,16,24,32].map(size=>`${careerPlayerLevel(rec)>=tournamentRequiredLevel(size)?"✅":"🔒"}${size}人`).join("　");
       const badge=careerRankBadgeHtml(rec);
       const unlockCopy=count>=AI_ORDER.length?"全部AI已解鎖":count>=cap?`目前${ROMAN_LEVELS[careerPlayerLevel(rec)-1]}級可挑戰上限：${cap}名AI；晉級後開放更強AI`:`下一名AI：總積分 ${next}（尚差${Math.max(0,next-points)}）`;
       return `<div class="career-progress-card"><b>玩家等級 ${badge}</b><br><b>可挑戰AI ${count}/${AI_ORDER.length}</b>｜總積分 ${points}<div class="career-progress-bar"><i style="--career-pct:${pct.toFixed(1)}%"></i></div>${unlockCopy}<br>${tour}</div>`;
@@ -7140,7 +7180,7 @@
     }
     function rankingTournamentPodiumTotals(r){
       const totals={champion:0,runnerUp:0,third:0};
-      [12,16,24].forEach(n=>{
+      [12,16,24,32].forEach(n=>{
         const p=r?.tournamentPodiums?.[n]||{};
         totals.champion+=Number(p.champion||0);
         totals.runnerUp+=Number(p.runnerUp||0);
@@ -7184,6 +7224,11 @@
       return Object.values(rankingReadStore()).sort(rankingCompareUnified);
     }
     function rankingRecordByKey(key){
+      const cloudCache=window.__dddCloudRecordCache;
+      if(cloudCache && typeof cloudCache.get==="function"){
+        const cloudRecord=cloudCache.get(String(key));
+        if(cloudRecord) return cloudRecord;
+      }
       const store=rankingReadStore();
       return store[key] ? rankingNormalizeRecord(store[key]) : null;
     }
@@ -7203,7 +7248,8 @@
             : `<div class="leaderboard-detail-item wide"><span>玩家等級</span><b>Lv.${careerPlayerLevel(r)}｜${escapeHtml(careerRankInfo(careerPlayerLevel(r)).label)}　升級戰 ${Number(r.promotionWins||0)}勝／${Number(r.promotionLosses||0)}敗</b></div>`}
           <div class="leaderboard-detail-item"><span>錦標總場次</span><b>${Number(r.tournaments||0)}</b></div>
           <div class="leaderboard-detail-item"><span>冠／亞／季軍次數</span><b>🥇${pod.champion}　🥈${pod.runnerUp}　🥉${pod.third}</b></div>
-          <div class="leaderboard-detail-item"><span>奪牌率</span><b>${rankingPercent(rankingMedalRate(r))}</b></div>
+          <div class="leaderboard-detail-item"><span>錦標賽奪牌率</span><b>${rankingPercent(rankingMedalRate(r))}</b></div>
+          <div class="leaderboard-detail-item"><span>一般賽勝率</span><b>${rankingPercent(rankingLeagueWinRate(r))}</b></div>
           <div class="leaderboard-detail-item"><span>一般總場次</span><b>${Number(r.leagueSeries||0)}</b></div>
           <div class="leaderboard-detail-item"><span>5人勝場次數</span><b>${Number(leagueWins[5]||0)}</b></div>
           <div class="leaderboard-detail-item"><span>4人勝場次數</span><b>${Number(leagueWins[4]||0)}</b></div>
@@ -7254,24 +7300,56 @@
         : (rec?.name||"玩家");
       return `${isMe?"★ ":""}<span class="rank-roman">${escapeHtml(meta.roman)}</span>${ringIconHtml(meta.ring)}<span class="rank-person-name">${escapeHtml(visibleName)}</span>`;
     }
-    function showLeaderboardModal(){
+    async function showLeaderboardModal(){
       const profile=rankingEnsureProfile(rankingProfileName());
-      rankingEnsureAIProfiles();
-      const rows=rankingRows(),myKey=rankingKey(profile.name);
+      const myKey=rankingKey(profile.name);
       els.modalBackdrop.querySelector(".modal")?.classList.remove("mode-home-modal");
       els.modalTitle.textContent="🏆 排行榜";
       els.modalBody.dataset.view="leaderboard";
-      els.modalText.textContent="玩家名稱以前綴顯示 I～IX 級與銅／銀／金圓形圖案。階級進度依一般積分＋錦標積分總和計算。";
-      let html=`<div style="overflow:auto;max-height:62vh"><table class="leaderboard-table"><thead><tr><th>排名</th><th>名稱</th><th>錦標積分</th><th>奪牌率</th><th>一般積分</th></tr></thead><tbody>`;
+      els.modalText.textContent="正在讀取全球排行榜…";
+      els.modalBody.innerHTML=`<div class="empty-zone" style="min-height:120px">☁️ 讀取線上排行中…</div>`;
+      els.modalError.textContent="";
+      els.modalActions.innerHTML="";
+      els.modalBackdrop.classList.add("open");
+
+      let rows=[];
+      let cloudMode=false;
+      try{
+        if(typeof window.dddLoadCloudLeaderboard==="function"){
+          rows=await window.dddLoadCloudLeaderboard(300);
+          cloudMode=true;
+        }
+      }catch(error){
+        console.warn("[DDD Leaderboard] 線上排行榜讀取失敗，改用本機資料。",error);
+      }
+      if(!cloudMode){
+        rankingEnsureAIProfiles();
+        rows=rankingRows();
+      }
+
+      const totalPoints=r=>Math.max(0,Number(r?.tournamentTP||0))+Math.max(0,Number(r?.leaguePoints||0));
+      rows=rows.slice().sort((a,b)=>
+        (totalPoints(b)-totalPoints(a))
+        || (Number(b.tournamentTP||0)-Number(a.tournamentTP||0))
+        || (Number(b.leaguePoints||0)-Number(a.leaguePoints||0))
+        || (Number(b.rating||0)-Number(a.rating||0))
+        || String(a.name||"").localeCompare(String(b.name||""),"zh-TW")
+      );
+
+      els.modalText.textContent=cloudMode
+        ? "全球排行榜依總積分排序；總積分＝錦標積分＋一般積分。點選玩家名稱可查看詳細戰績。"
+        : "目前無法連線，顯示本機排行榜。點選名稱可查看詳細戰績。";
+
+      let html=`<div style="overflow:auto;max-height:62vh"><table class="leaderboard-table"><thead><tr><th>排名</th><th>名稱</th><th>錦標積分</th><th>一般積分</th><th>總積分</th></tr></thead><tbody>`;
       rows.forEach((r,i)=>{
-        const isMe=r.type!=="ai"&&rankingKey(r.name)===myKey;
-        const recordKey=r.type==="ai"?rankingAIKey(r.aiCode):rankingKey(r.name);
+        const isMe=Boolean(r._isCurrentUser)||(r.type!=="ai"&&rankingKey(r.name)===myKey);
+        const recordKey=r._cloudRecordKey || (r.type==="ai"?rankingAIKey(r.aiCode):rankingKey(r.name));
         html+=`<tr class="${isMe?"leaderboard-me":""}">
           <td>${i+1}</td>
           <td><button type="button" class="leaderboard-name-btn" data-ranking-record="${escapeHtml(recordKey)}">${leaderboardDisplayNameHtml(r,isMe)}</button></td>
           <td>${Number(r.tournamentTP||0)}</td>
-          <td>${rankingPercent(rankingMedalRate(r))}</td>
           <td>${Number(r.leaguePoints||0)}</td>
+          <td><b>${totalPoints(r)}</b></td>
         </tr>`;
       });
       if(!rows.length)html+=`<tr><td colspan="5">尚無排行榜紀錄。</td></tr>`;
@@ -7289,14 +7367,15 @@
             if(human)human.name=saved;
             render();
           }
+          if(typeof window.dddSyncCareer==="function") void window.dddSyncCareer("profile_name");
           showLeaderboardModal();
         }),
+        makeButton("重新整理","btn",()=>showLeaderboardModal()),
         makeButton("關閉","btn primary",closeModal)
       );
       els.modalBody.querySelectorAll("[data-ranking-record]").forEach(btn=>{
         btn.addEventListener("click",()=>showLeaderboardDetail(btn.dataset.rankingRecord));
       });
-      els.modalBackdrop.classList.add("open");
     }
     // v118：新目標分數16／14／12／10的AI節奏函式。
     // 搶分期輪次依目標每+2分約延後2輪：10→6、12→8、14→10、16→12。
@@ -19291,6 +19370,7 @@
 
         // v230：每一局積分賽結束後，真人與AI同步更新Rating／場次／名次戰績。
         rankingRecordLeagueGame(ranked);
+        if(typeof window.dddRecordLeagueGame==="function") void window.dddRecordLeagueGame(ranked);
 
         const isPromotionBattle=Boolean(game.settings?.promotionBattle);
         const humanPromotionPlayer=isPromotionBattle?game.players.find(p=>!p.isAI):null;
@@ -19318,6 +19398,7 @@
            addLog(`🏆 積分賽結束：${winnerText}`, true);
            setStatus(`積分賽結束：${winnerText}`, "ok");
            rankingRecordLeagueFinal(finalRanked);
+           if(typeof window.dddRecordLeagueSeries==="function") void window.dddRecordLeagueSeries(finalRanked);
            if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("league_final");
            if(game.settings?.promotionBattle&&game.promotionResult){
              const pr=game.promotionResult;
@@ -19430,8 +19511,10 @@
           t.results[`match${matchInfo.id}`] = {p1:ranked[0],s1:ranked[0].score,n1:ranked[0].maxPressure,p2:ranked[1],s2:ranked[1].score,n2:ranked[1].maxPressure,rounds:game.round};
         }
         rankingRecordTournamentMatch(ranked,matchInfo);
+        if(typeof window.dddRecordTournamentMatch==="function") void window.dddRecordTournamentMatch(ranked,matchInfo);
         if (matchInfo.type === "final") {
           rankingRecordTournamentFinal();
+          if(typeof window.dddRecordTournamentFinal==="function") void window.dddRecordTournamentFinal();
           if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("tournament_final");
         }
         // v134：純AI場也以真人對局相同的中文格式留下場次結算，不再輸出 E|... 機器碼。
@@ -21011,7 +21094,7 @@
       const modal=els.modalBackdrop.querySelector(".modal");
       modal?.classList.remove("mode-home-modal");
       els.modalTitle.textContent="深海洞潛";
-      els.modalText.textContent="輸入你的稱呼與終局台詞。資料只儲存在這個瀏覽器。";
+      els.modalText.textContent="輸入你的稱呼與終局台詞。生涯戰績會同步至線上排行榜；介面偏好仍保存在這個瀏覽器。";
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
       els.modalBody.innerHTML=`<div class="startup-profile-card">
@@ -21071,7 +21154,7 @@
         <section class="mode-menu-panel"><div class="mode-home-grid v135-mode-grid v149-mode-grid">
           ${v135ModeCard("tutorial","教學","6輪五種行動教學。","?")}
           ${v135ModeCard("quick","快速","快速單局。","▶")}
-          ${v135ModeCard("ranking","排行","玩家與AI排名。","🏆")}
+          ${v135ModeCard("ranking","排行","全球玩家排名。","🏆")}
           ${v135ModeCard("general","一般","2–5人積分賽。","Pt")}
           ${v135ModeCard("promotion","升級","累積總分提升階級。","▲")}
           ${v135ModeCard("tournament","錦標","12／16／24／32人賽。","T")}
@@ -22063,10 +22146,12 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 
 <script>
 /* =========================================================
-   Deep Dark Dive v165 — Supabase first-stage cloud sync
+   Deep Dark Dive v166 — Supabase global leaderboard + match history
    - Keeps existing localStorage as the local/offline source.
    - Creates/reuses an anonymous Supabase Auth user.
    - Upserts the HUMAN career record into public.ddd_players.
+   - Reads global player rankings from public.ddd_players.
+   - Inserts league/tournament match history into public.ddd_match_results.
    - Never embeds a secret/service-role key.
    ========================================================= */
 (function(){
@@ -22169,10 +22254,12 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         tournamentsBySize: rec?.tournamentsBySize || {},
         tournamentPodiums: rec?.tournamentPodiums || {},
         placements: rec?.placements || {},
+        rankStartTotalPoints: Number(rec?.rankStartTotalPoints || 0),
         promotionBattles: Number(rec?.promotionBattles || 0),
         promotionWins: Number(rec?.promotionWins || 0),
         promotionLosses: Number(rec?.promotionLosses || 0),
         promotionHistory: Array.isArray(rec?.promotionHistory) ? rec.promotionHistory.slice(-120) : [],
+        historyKeys: Array.isArray(rec?.historyKeys) ? rec.historyKeys.slice(-300) : [],
         abilities: rec?.abilities || {},
         abilityGames: Number(rec?.abilityGames || 0),
         abilityHistory: Array.isArray(rec?.abilityHistory) ? rec.abilityHistory.slice(-30) : []
@@ -22213,17 +22300,212 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return syncChain;
   };
 
-  window.dddLoadCloudLeaderboard = async function(limit=100){
+  window.__dddCloudRecordCache = window.__dddCloudRecordCache || new Map();
+
+  function cloudRowToRankingRecord(row){
+    const stats=(row?.stats && typeof row.stats==="object") ? row.stats : {};
+    const record={
+      name:String(row?.display_name||"玩家"),
+      type:"human",
+      aiCode:null,
+      rating:Number(row?.rating||1000),
+      leaguePoints:Number(row?.league_points||0),
+      leagueSeries:Number(row?.league_series||0),
+      leagueWins:Number(row?.league_wins||0),
+      leagueSeriesBySize:stats.leagueSeriesBySize||{2:0,3:0,4:0,5:0},
+      leagueWinsBySize:stats.leagueWinsBySize||{2:0,3:0,4:0,5:0},
+      tournamentTP:Number(row?.tournament_tp||0),
+      tournaments:Number(row?.tournaments||0),
+      tournamentsBySize:stats.tournamentsBySize||{12:0,16:0,24:0,32:0},
+      tournamentPodiums:stats.tournamentPodiums||{
+        12:{champion:0,runnerUp:0,third:0},
+        16:{champion:0,runnerUp:0,third:0},
+        24:{champion:0,runnerUp:0,third:0},
+        32:{champion:0,runnerUp:0,third:0}
+      },
+      unlockedAICount:Number(row?.unlocked_ai_count||4),
+      playerRankLevel:Number(row?.player_rank_level||1),
+      rankStartTotalPoints:Number(stats.rankStartTotalPoints||0),
+      promotionBattles:Number(stats.promotionBattles||0),
+      promotionWins:Number(stats.promotionWins||0),
+      promotionLosses:Number(stats.promotionLosses||0),
+      promotionHistory:Array.isArray(stats.promotionHistory)?stats.promotionHistory:[],
+      abilities:stats.abilities||{},
+      abilityGames:Number(stats.abilityGames||0),
+      abilityHistory:Array.isArray(stats.abilityHistory)?stats.abilityHistory:[],
+      abilityEventKeys:[],
+      ratedMatches:Number(row?.rated_matches||0),
+      wins:Number(row?.wins||0),
+      podiums:Number(row?.podiums||0),
+      placements:stats.placements||{2:[0,0],3:[0,0,0],4:[0,0,0,0],5:[0,0,0,0,0]},
+      updatedAt:row?.updated_at ? Date.parse(row.updated_at) : Date.now(),
+      historyKeys:Array.isArray(stats.historyKeys)?stats.historyKeys:[],
+      _cloudUserId:String(row?.user_id||""),
+      _cloudRecordKey:`cloud:${String(row?.user_id||"")}`,
+      _isCurrentUser:Boolean(state.user?.id && String(state.user.id)===String(row?.user_id||""))
+    };
+    return record;
+  }
+
+  window.dddLoadCloudLeaderboard = async function(limit=300){
     await dddEnsureCloudUser();
     const { data, error } = await client
       .from("ddd_players")
-      .select("user_id,display_name,league_points,tournament_tp,rating,rated_matches,wins,podiums,player_rank_level,unlocked_ai_count,updated_at")
-      .order("tournament_tp", { ascending:false })
-      .order("league_points", { ascending:false })
-      .order("rating", { ascending:false })
-      .limit(Math.max(1, Math.min(500, Number(limit)||100)));
+      .select("user_id,display_name,league_points,tournament_tp,rating,rated_matches,wins,podiums,league_series,league_wins,tournaments,player_rank_level,unlocked_ai_count,stats,updated_at")
+      .limit(Math.max(1, Math.min(500, Number(limit)||300)));
     if(error) throw error;
-    return data || [];
+    const records=(data||[]).map(cloudRowToRankingRecord);
+    window.__dddCloudRecordCache.clear();
+    records.forEach(record=>window.__dddCloudRecordCache.set(record._cloudRecordKey,record));
+    return records;
+  };
+
+  async function insertMatchResult(payload){
+    const { error } = await client.from("ddd_match_results").insert(payload);
+    if(error){
+      // unique(user_id,event_key) protects against double clicks / repeated finalization.
+      if(String(error.code)==="23505" || /duplicate key/i.test(String(error.message||""))){
+        cloudLog(`比賽紀錄已存在，略過：${payload.event_key}`);
+        return payload;
+      }
+      throw error;
+    }
+    cloudLog(`比賽紀錄上傳成功：${payload.event_key}`);
+    return payload;
+  }
+
+  function rankedHuman(rankedPlayers){
+    const list=Array.isArray(rankedPlayers)?rankedPlayers:[];
+    const index=list.findIndex(p=>p && !p.isAI);
+    return index>=0 ? {player:list[index],placement:index+1} : null;
+  }
+
+  window.dddRecordLeagueGame = async function(rankedPlayers){
+    try{
+      const user=await dddEnsureCloudUser();
+      const hit=rankedHuman(rankedPlayers);
+      if(!hit) return null;
+      const p=hit.player;
+      return await insertMatchResult({
+        user_id:user.id,
+        event_key:`league:${game._rankingLeagueId||"legacy"}:game:${game.leagueGameCount}`,
+        mode:game.settings?.promotionBattle ? "promotion_game" : "league_game",
+        player_count:Number(game.settings?.playerCount||game.players?.length||0)||null,
+        tournament_size:null,
+        placement:hit.placement,
+        vp:Number(p.score||0),
+        league_points_awarded:0,
+        tournament_tp_awarded:0,
+        details:{
+          series_points_awarded:Number(p.leagueLastPoints||0),
+          series_points_after:Number(p.leaguePoints||0),
+          max_n2:Number(p.maxPressure||0),
+          eliminated:Boolean(p.eliminated),
+          round:Number(game.round||0)
+        }
+      });
+    }catch(error){
+      cloudWarn("一般賽單局紀錄上傳失敗。",error);
+      return null;
+    }
+  };
+
+  window.dddRecordLeagueSeries = async function(finalRanked){
+    try{
+      const user=await dddEnsureCloudUser();
+      const hit=rankedHuman(finalRanked);
+      if(!hit) return null;
+      const p=hit.player,n=Number(game.settings?.playerCount||finalRanked?.length||0);
+      const topSeries=Math.max(...(finalRanked||[]).map(x=>Number(x?.leaguePoints||0)));
+      const isWinner=Number(p.leaguePoints||0)===topSeries;
+      const careerAward=game.settings?.promotionBattle
+        ? Number(game.promotionResult?.reward||0)
+        : (isWinner ? Number(LEAGUE_WIN_POINTS[n]||0) : 0);
+      return await insertMatchResult({
+        user_id:user.id,
+        event_key:`league:${game._rankingLeagueId||"legacy"}:career`,
+        mode:game.settings?.promotionBattle ? "promotion_series" : "league_series",
+        player_count:n||null,
+        tournament_size:null,
+        placement:hit.placement,
+        vp:Number(p.leagueTotalScore||0),
+        league_points_awarded:careerAward,
+        tournament_tp_awarded:0,
+        details:{
+          series_points:Number(p.leaguePoints||0),
+          is_winner:isWinner,
+          games:Number(game.leagueGameCount||0),
+          promotion_result:game.settings?.promotionBattle ? (game.promotionResult||null) : null
+        }
+      });
+    }catch(error){
+      cloudWarn("一般賽系列紀錄上傳失敗。",error);
+      return null;
+    }
+  };
+
+  window.dddRecordTournamentMatch = async function(rankedPlayers,matchInfo){
+    try{
+      const hit=rankedHuman(rankedPlayers);
+      if(!hit) return null; // 純AI場不建立真人戰績列
+      const user=await dddEnsureCloudUser();
+      const p=hit.player,t=game.tournament||{};
+      return await insertMatchResult({
+        user_id:user.id,
+        event_key:`tournament:${t.id||"legacy"}:${matchInfo?.id||matchInfo?.name||t.matchIndex}:game:${matchInfo?.round||0}`,
+        mode:"tournament_match",
+        player_count:Number(game.players?.length||0)||null,
+        tournament_size:Number(t.size||0)||null,
+        placement:hit.placement,
+        vp:Number(p.score||0),
+        league_points_awarded:0,
+        tournament_tp_awarded:0,
+        details:{
+          match_name:String(matchInfo?.name||""),
+          match_type:String(matchInfo?.type||""),
+          stage:String(matchInfo?.stage||""),
+          group:String(matchInfo?.group||""),
+          round:Number(game.round||0),
+          max_n2:Number(p.maxPressure||0),
+          eliminated:Boolean(p.eliminated)
+        }
+      });
+    }catch(error){
+      cloudWarn("錦標賽單場紀錄上傳失敗。",error);
+      return null;
+    }
+  };
+
+  window.dddRecordTournamentFinal = async function(){
+    try{
+      const user=await dddEnsureCloudUser();
+      const t=game.tournament;
+      if(!t || typeof rankingTournamentFinalOrder!=="function") return null;
+      const order=rankingTournamentFinalOrder(t);
+      const hit=rankedHuman(order);
+      if(!hit) return null;
+      const p=hit.player;
+      const awards=TOURNAMENT_PODIUM_POINTS[Number(t.size)]||[];
+      return await insertMatchResult({
+        user_id:user.id,
+        event_key:`tournament:${t.id||"legacy"}:honor`,
+        mode:"tournament_final",
+        player_count:null,
+        tournament_size:Number(t.size||0)||null,
+        placement:hit.placement,
+        vp:Number(p.tTotalScore||p.score||0),
+        league_points_awarded:0,
+        tournament_tp_awarded:hit.placement<=3 ? Number(awards[hit.placement-1]||0) : 0,
+        details:{
+          champion:hit.placement===1,
+          podium:hit.placement<=3,
+          tournament_name:`${Number(t.size||0)}人錦標賽`
+        }
+      });
+    }catch(error){
+      cloudWarn("錦標賽總結紀錄上傳失敗。",error);
+      return null;
+    }
   };
 
   async function bootstrap(){
