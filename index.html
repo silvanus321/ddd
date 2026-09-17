@@ -1,3 +1,4 @@
+<!-- v167: global/local leaderboard + globally unique player names + desktop horizontal hand scrolling -->
 <!-- DDD Quick Play v133: cover home 2x2 modes + all competitive modes random unique AI opponents + 27 AI defeat roars -->
 <!-- DDD Quick Play v135: startup player profile (name/victory quote/defeat roar); General Match merges solo+quick into 1–5 players; four-mode home with six-round tutorial entry reserved -->
 <!-- DDD Quick Play v134: all playable action logs, including pure-AI tournament matches, use the same human-readable Chinese format as human games -->
@@ -18,6 +19,7 @@
 <!-- v128: remove AI internal decision/explanation messages from action log; AI logic unchanged -->
 <!-- v129: add 27 AI victory declarations + role-themed victory effects; III 寧妙 quote updated per designer request -->
 <!-- v165: all playable modes use six external music/ MP3 tracks; recorded music is not embedded in HTML -->
+<!-- v167: global player names are unique; leaderboard splits into Global Players and My AI; anonymous auth stays invisible until a name is claimed -->
 <!-- v166: Supabase global leaderboard + per-match cloud records + 5-button toolbar + larger home menu type -->
 <!DOCTYPE html><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
@@ -4527,6 +4529,24 @@
 .leaderboard-table td:last-child{font-weight:900;color:var(--accent);}
 </style>
 
+
+<style id="ddd-v167-desktop-card-scroll">
+/* v167 desktop: make overflowing hand/card rows visibly and comfortably horizontally scrollable. */
+.cards-row{
+  scrollbar-width:auto!important;
+  scrollbar-color:rgba(214,231,255,.72) rgba(255,255,255,.08)!important;
+  overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.cards-row::-webkit-scrollbar{height:10px;}
+.cards-row::-webkit-scrollbar-track{background:rgba(255,255,255,.07);border-radius:999px;}
+.cards-row::-webkit-scrollbar-thumb{background:rgba(214,231,255,.68);border-radius:999px;border:2px solid rgba(2,29,49,.85);}
+.cards-row::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.88);}
+@media (hover:hover) and (pointer:fine){
+  .cards-row.ddd-scrollable-row{cursor:grab;}
+  .cards-row.ddd-scrollable-row.ddd-dragging{cursor:grabbing!important;user-select:none!important;scroll-behavior:auto!important;}
+}
+</style>
 </head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
@@ -6690,9 +6710,22 @@
     }
     function rankingSetProfileName(name){
       const clean=rankingSafeName(name);
+      const old=rankingProfileName();
+      const oldKey=rankingKey(old),newKey=rankingKey(clean);
+      if(oldKey!==newKey){
+        const store=rankingReadStore();
+        const oldRec=store[oldKey];
+        const existing=store[newKey];
+        if(oldRec && !existing){
+          oldRec.name=clean;
+          store[newKey]=oldRec;
+          delete store[oldKey];
+          rankingWriteStore(store);
+        }
+      }
       try{localStorage.setItem(RANKING_PROFILE_KEY,clean);}catch(_){}
-      rankingEnsureProfile(clean);
-      if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("profile_name");
+      const rec=rankingEnsureProfile(clean);
+      if(rec) rec.name=clean;
       return clean;
     }
     function rankingKey(name){ return rankingSafeName(name).toLocaleLowerCase("zh-TW"); }
@@ -7261,7 +7294,7 @@
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
       els.modalActions.append(
-        makeButton("返回排行榜","btn primary",()=>showLeaderboardModal()),
+        makeButton("返回排行榜","btn primary",()=>showLeaderboardModal(window.__dddLeaderboardScope||"global")),
         makeButton("關閉","btn",closeModal)
       );
       els.modalBackdrop.classList.add("open");
@@ -7300,29 +7333,54 @@
         : (rec?.name||"玩家");
       return `${isMe?"★ ":""}<span class="rank-roman">${escapeHtml(meta.roman)}</span>${ringIconHtml(meta.ring)}<span class="rank-person-name">${escapeHtml(visibleName)}</span>`;
     }
-    async function showLeaderboardModal(){
+    async function requestUniquePlayerRename(scope="global"){
+      const next=prompt("輸入全球唯一的玩家名稱",rankingProfileName()==="玩家"?"":rankingProfileName());
+      if(next==null)return;
+      const clean=rankingSafeName(next);
+      if(!clean || clean==="玩家"){
+        els.modalError.textContent="請輸入自己的玩家名稱；「玩家」不能作為全球排行榜名稱。";
+        return;
+      }
+      els.modalError.textContent="正在確認名稱是否可用…";
+      try{
+        if(typeof window.dddClaimDisplayName==="function") await window.dddClaimDisplayName(clean);
+        const old=rankingProfileName(),saved=rankingSetProfileName(clean);
+        (game.players||[]).filter(p=>!p.isAI&&p.name===old).forEach(p=>{p.name=saved;});
+        (game.tournament?.allPlayers||[]).filter(p=>!p.isAI&&p.name===old).forEach(p=>{p.name=saved;});
+        if(typeof window.dddSyncCareer==="function") await window.dddSyncCareer("profile_name");
+        render();
+        await showLeaderboardModal(scope);
+      }catch(error){
+        console.warn("[DDD Leaderboard] 修改玩家名稱失敗",error);
+        els.modalError.textContent=error?.code==="DDD_NAME_TAKEN"
+          ? "這個玩家名稱已被其他玩家使用，請換一個名稱。"
+          : "目前無法確認名稱，請檢查網路後再試。";
+      }
+    }
+    async function showLeaderboardModal(scope="global"){
+      scope=scope==="local"?"local":"global";
+      window.__dddLeaderboardScope=scope;
       const profile=rankingEnsureProfile(rankingProfileName());
       const myKey=rankingKey(profile.name);
       els.modalBackdrop.querySelector(".modal")?.classList.remove("mode-home-modal");
       els.modalTitle.textContent="🏆 排行榜";
       els.modalBody.dataset.view="leaderboard";
-      els.modalText.textContent="正在讀取全球排行榜…";
-      els.modalBody.innerHTML=`<div class="empty-zone" style="min-height:120px">☁️ 讀取線上排行中…</div>`;
+      els.modalText.textContent=scope==="global"?"正在讀取全球玩家排行榜…":"顯示這台裝置上的你與 27 個 AI 戰績。";
+      els.modalBody.innerHTML=`<div class="empty-zone" style="min-height:120px">${scope==="global"?"☁️ 讀取線上排行中…":"🤖 讀取本機 AI 排行中…"}</div>`;
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
       els.modalBackdrop.classList.add("open");
 
       let rows=[];
-      let cloudMode=false;
-      try{
-        if(typeof window.dddLoadCloudLeaderboard==="function"){
-          rows=await window.dddLoadCloudLeaderboard(300);
-          cloudMode=true;
+      let cloudError=null;
+      if(scope==="global"){
+        try{
+          if(typeof window.dddLoadCloudLeaderboard==="function") rows=await window.dddLoadCloudLeaderboard(300);
+        }catch(error){
+          cloudError=error;
+          console.warn("[DDD Leaderboard] 全球排行榜讀取失敗。",error);
         }
-      }catch(error){
-        console.warn("[DDD Leaderboard] 線上排行榜讀取失敗，改用本機資料。",error);
-      }
-      if(!cloudMode){
+      }else{
         rankingEnsureAIProfiles();
         rows=rankingRows();
       }
@@ -7336,11 +7394,17 @@
         || String(a.name||"").localeCompare(String(b.name||""),"zh-TW")
       );
 
-      els.modalText.textContent=cloudMode
-        ? "全球排行榜依總積分排序；總積分＝錦標積分＋一般積分。點選玩家名稱可查看詳細戰績。"
-        : "目前無法連線，顯示本機排行榜。點選名稱可查看詳細戰績。";
+      els.modalText.textContent=scope==="global"
+        ? (cloudError
+            ? "全球排行榜目前無法連線；可切換到「我與 AI」查看本機排名。"
+            : "全球玩家排行榜只列真人；總積分＝錦標積分＋一般積分。點玩家名稱可查看詳細戰績。")
+        : "「我與 AI」只使用這台裝置的 localStorage，保留你與 27 個 AI 的原本排名，不會受到其他玩家影響。";
 
-      let html=`<div style="overflow:auto;max-height:62vh"><table class="leaderboard-table"><thead><tr><th>排名</th><th>名稱</th><th>錦標積分</th><th>一般積分</th><th>總積分</th></tr></thead><tbody>`;
+      const tabs=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px">
+        <button type="button" class="btn ${scope==="global"?"primary":""}" data-leaderboard-scope="global">🌐 全球玩家</button>
+        <button type="button" class="btn ${scope==="local"?"primary":""}" data-leaderboard-scope="local">🤖 我與 AI</button>
+      </div>`;
+      let html=tabs+`<div style="overflow:auto;max-height:58vh"><table class="leaderboard-table"><thead><tr><th>排名</th><th>名稱</th><th>錦標積分</th><th>一般積分</th><th>總積分</th></tr></thead><tbody>`;
       rows.forEach((r,i)=>{
         const isMe=Boolean(r._isCurrentUser)||(r.type!=="ai"&&rankingKey(r.name)===myKey);
         const recordKey=r._cloudRecordKey || (r.type==="ai"?rankingAIKey(r.aiCode):rankingKey(r.name));
@@ -7352,27 +7416,19 @@
           <td><b>${totalPoints(r)}</b></td>
         </tr>`;
       });
-      if(!rows.length)html+=`<tr><td colspan="5">尚無排行榜紀錄。</td></tr>`;
+      if(!rows.length)html+=`<tr><td colspan="5">${scope==="global"?(cloudError?"全球排行榜暫時無法讀取。":"尚無全球玩家紀錄。"):`尚無本機排行榜紀錄。`}</td></tr>`;
       html+=`</tbody></table></div>`;
       els.modalBody.innerHTML=html;
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
       els.modalActions.append(
-        makeButton("修改玩家名稱","btn",()=>{
-          const next=prompt("輸入排行榜玩家名稱",rankingProfileName());
-          if(next==null)return;
-          const old=rankingProfileName(),saved=rankingSetProfileName(next);
-          if(game.globalTurn===0){
-            const human=(game.players||[]).find(p=>!p.isAI&&p.name===old);
-            if(human)human.name=saved;
-            render();
-          }
-          if(typeof window.dddSyncCareer==="function") void window.dddSyncCareer("profile_name");
-          showLeaderboardModal();
-        }),
-        makeButton("重新整理","btn",()=>showLeaderboardModal()),
+        makeButton("修改玩家名稱","btn",()=>{void requestUniquePlayerRename(scope);}),
+        makeButton("重新整理","btn",()=>{void showLeaderboardModal(scope);}),
         makeButton("關閉","btn primary",closeModal)
       );
+      els.modalBody.querySelectorAll("[data-leaderboard-scope]").forEach(btn=>{
+        btn.addEventListener("click",()=>{void showLeaderboardModal(btn.dataset.leaderboardScope);});
+      });
       els.modalBody.querySelectorAll("[data-ranking-record]").forEach(btn=>{
         btn.addEventListener("click",()=>showLeaderboardDetail(btn.dataset.rankingRecord));
       });
@@ -21076,16 +21132,20 @@
       } catch(_err){}
       return clean;
     }
-    function saveStartupPlayerProfile(){
+    async function saveStartupPlayerProfile(){
       const nameInput=document.getElementById("startupPlayerName");
       const victoryInput=document.getElementById("startupVictoryQuote");
       const defeatInput=document.getElementById("startupDefeatQuote");
-      const name=rankingSetProfileName(nameInput?.value || rankingProfileName());
+      const clean=rankingSafeName(nameInput?.value || "");
+      if(!nameInput?.value?.trim() || clean==="玩家") throw Object.assign(new Error("請輸入自己的玩家名稱。"),{code:"DDD_NAME_REQUIRED"});
+      if(typeof window.dddClaimDisplayName==="function") await window.dddClaimDisplayName(clean);
+      const name=rankingSetProfileName(clean);
       saveHumanVictoryQuote(victoryInput?.value || "");
       saveHumanDefeatQuote(defeatInput?.value || "");
       // 若先前已建立真人物件，也立刻同步新名稱，避免舊名稱殘留。
       (game.players||[]).filter(player=>!player.isAI).forEach(player=>{player.name=name;});
       (game.tournament?.allPlayers||[]).filter(player=>!player.isAI).forEach(player=>{player.name=name;});
+      if(typeof window.dddSyncCareer==="function") await window.dddSyncCareer("startup_profile");
       return name;
     }
     function showPlayerEntry(initial=true){
@@ -21094,15 +21154,31 @@
       const modal=els.modalBackdrop.querySelector(".modal");
       modal?.classList.remove("mode-home-modal");
       els.modalTitle.textContent="深海洞潛";
-      els.modalText.textContent="輸入你的稱呼與終局台詞。生涯戰績會同步至線上排行榜；介面偏好仍保存在這個瀏覽器。";
+      els.modalText.textContent="輸入全球唯一的玩家名稱與終局台詞。系統會在背景建立玩家識別；生涯戰績同步至全球排行榜。";
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
       els.modalBody.innerHTML=`<div class="startup-profile-card">
-        <label class="startup-profile-field"><span>玩家稱呼</span><input id="startupPlayerName" type="text" maxlength="24" value="${escapeHtml(rankingProfileName())}" placeholder="玩家"></label>
+        <label class="startup-profile-field"><span>玩家稱呼</span><input id="startupPlayerName" type="text" maxlength="24" value="${rankingProfileName()==="玩家"?"":escapeHtml(rankingProfileName())}" placeholder="請輸入全球唯一名稱"></label>
         <label class="startup-profile-field"><span>🏆 勝利宣言</span><input id="startupVictoryQuote" type="text" maxlength="60" value="${escapeHtml(humanVictoryQuote())}" placeholder="例如：我從深淵歸來，而勝利與我同行。"></label>
         <label class="startup-profile-field"><span>💢 戰敗怒吼</span><input id="startupDefeatQuote" type="text" maxlength="60" value="${escapeHtml(humanDefeatQuote())}" placeholder="例如：下一局，我會把勝利拿回來。"></label>
       </div>`;
-      els.modalActions.append(makeButton("進入遊戲","btn primary",()=>{saveStartupPlayerProfile();showModeHome(true);}));
+      const enterBtn=makeButton("進入遊戲","btn primary",async()=>{
+        enterBtn.disabled=true;
+        els.modalError.textContent="正在確認玩家名稱…";
+        try{
+          await saveStartupPlayerProfile();
+          els.modalError.textContent="";
+          showModeHome(true);
+        }catch(error){
+          console.warn("[DDD Profile] 玩家名稱設定失敗",error);
+          els.modalError.textContent=error?.code==="DDD_NAME_TAKEN"
+            ? "這個玩家名稱已被其他玩家使用，請換一個名稱。"
+            : error?.code==="DDD_NAME_REQUIRED"
+              ? "請先輸入自己的玩家名稱。"
+              : "目前無法確認玩家名稱，請檢查網路後再試。";
+        }finally{ enterBtn.disabled=false; }
+      });
+      els.modalActions.append(enterBtn);
       els.modalBackdrop.classList.add("open");
       requestAnimationFrame(()=>document.getElementById("startupPlayerName")?.focus());
     }
@@ -22146,11 +22222,12 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 
 <script>
 /* =========================================================
-   Deep Dark Dive v166 — Supabase global leaderboard + match history
+   Deep Dark Dive v167 — unique global names + dual leaderboard + match history
    - Keeps existing localStorage as the local/offline source.
    - Creates/reuses an anonymous Supabase Auth user.
-   - Upserts the HUMAN career record into public.ddd_players.
-   - Reads global player rankings from public.ddd_players.
+   - Creates/reuses anonymous Auth invisibly, but does not create ddd_players until a unique name is claimed.
+   - Upserts the HUMAN career record into public.ddd_players only after profile claim.
+   - Reads global human rankings from public.ddd_players; local player+27AI stays in localStorage.
    - Inserts league/tournament match history into public.ddd_match_results.
    - Never embeds a secret/service-role key.
    ========================================================= */
@@ -22166,7 +22243,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     connected: false,
     lastSyncAt: null,
     lastReason: null,
-    error: null
+    error: null,
+    profileClaimed: false,
+    cloudDisplayName: null
   };
 
   function cloudLog(message, detail){
@@ -22227,12 +22306,58 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return authPromise;
   }
 
+  async function dddGetOwnCloudProfile(){
+    const user=await dddEnsureCloudUser();
+    const { data, error }=await client
+      .from("ddd_players")
+      .select("user_id,display_name,league_points,tournament_tp,rating,updated_at")
+      .eq("user_id",user.id)
+      .limit(1);
+    if(error) throw error;
+    const row=Array.isArray(data)&&data.length?data[0]:null;
+    state.profileClaimed=Boolean(row);
+    state.cloudDisplayName=row?String(row.display_name||""):null;
+    return row;
+  }
+
+  async function dddClaimDisplayName(rawName){
+    const user=await dddEnsureCloudUser();
+    const clean=(typeof window.rankingSafeName==="function")
+      ? window.rankingSafeName(rawName)
+      : String(rawName||"").trim().replace(/[<>]/g,"").slice(0,24);
+    if(!clean || clean==="玩家") throw Object.assign(new Error("Player name required"),{code:"DDD_NAME_REQUIRED"});
+
+    const { error }=await client
+      .from("ddd_players")
+      .upsert({user_id:user.id,display_name:clean,updated_at:new Date().toISOString()},{onConflict:"user_id"});
+    if(error){
+      if(String(error.code)==="23505" || /duplicate key|unique constraint/i.test(String(error.message||""))){
+        throw Object.assign(new Error("Display name already taken"),{code:"DDD_NAME_TAKEN",cause:error});
+      }
+      throw error;
+    }
+    state.profileClaimed=true;
+    state.cloudDisplayName=clean;
+    cloudLog(`玩家名稱已綁定：${clean}`);
+    return clean;
+  }
+
+  async function ensureProfileClaimed(){
+    if(state.profileClaimed) return true;
+    const row=await dddGetOwnCloudProfile();
+    return Boolean(row);
+  }
+
+  window.dddGetOwnCloudProfile=dddGetOwnCloudProfile;
+  window.dddClaimDisplayName=dddClaimDisplayName;
+
   function buildCareerPayload(user){
     if(typeof window.careerCurrentProfile !== "function") throw new Error("找不到 careerCurrentProfile()，遊戲尚未完成初始化");
     const rec = window.careerCurrentProfile();
+    const sourceName=state.cloudDisplayName || rec?.name || "玩家";
     const safeName = (typeof window.rankingSafeName === "function")
-      ? window.rankingSafeName(rec?.name || "玩家")
-      : String(rec?.name || "玩家").trim().slice(0,24) || "玩家";
+      ? window.rankingSafeName(sourceName)
+      : String(sourceName).trim().slice(0,24) || "玩家";
 
     return {
       user_id: user.id,
@@ -22270,6 +22395,10 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 
   async function doCareerSync(reason){
     const user = await dddEnsureCloudUser();
+    if(!(await ensureProfileClaimed())){
+      cloudLog(`尚未選定全球唯一名稱，略過生涯同步（${reason||"manual"}）。`);
+      return null;
+    }
     const payload = buildCareerPayload(user);
     const { error } = await client
       .from("ddd_players")
@@ -22361,6 +22490,10 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   };
 
   async function insertMatchResult(payload){
+    if(!(await ensureProfileClaimed())){
+      cloudLog(`尚未選定全球唯一名稱，略過比賽紀錄：${payload?.event_key||"unknown"}`);
+      return null;
+    }
     const { error } = await client.from("ddd_match_results").insert(payload);
     if(error){
       // unique(user_id,event_key) protects against double clicks / repeated finalization.
@@ -22511,10 +22644,25 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   async function bootstrap(){
     try{
       await dddEnsureCloudUser();
-      // Wait one task so the original v165 initialization/localStorage migration can finish first.
-      setTimeout(()=>{ void window.dddSyncCareer("startup"); }, 0);
+      const profile=await dddGetOwnCloudProfile();
+      if(profile){
+        state.profileClaimed=true;
+        state.cloudDisplayName=String(profile.display_name||"");
+        // Existing cloud profile is canonical. Only auto-adopt when local profile is still the default placeholder.
+        setTimeout(()=>{
+          try{
+            if(typeof window.rankingProfileName==="function" && typeof window.rankingSetProfileName==="function" && window.rankingProfileName()==="玩家" && state.cloudDisplayName){
+              window.rankingSetProfileName(state.cloudDisplayName);
+            }
+          }catch(_){ }
+          void window.dddSyncCareer("startup_existing_profile");
+        },0);
+      }else{
+        state.profileClaimed=false;
+        cloudLog("匿名玩家識別已建立；等待玩家選定全球唯一名稱後才建立 ddd_players。 ");
+      }
     }catch(err){
-      // Offline/local play remains available.
+      // Offline/local play remains available, but a global-unique name cannot be confirmed offline.
     }
   }
 
@@ -22523,4 +22671,95 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 })();
 </script>
 
+
+<script id="ddd-v167-desktop-card-scroll-script">
+(()=>{
+  const SCROLL_CLASS="ddd-scrollable-row";
+  let drag=null;
+  let suppressClickUntil=0;
+
+  function refreshRow(row){
+    if(!(row instanceof HTMLElement)) return;
+    row.classList.toggle(SCROLL_CLASS, row.scrollWidth > row.clientWidth + 3);
+  }
+  function refreshAll(){
+    document.querySelectorAll('.cards-row').forEach(refreshRow);
+  }
+
+  // Refresh after renders / card-count changes.
+  const observer=new MutationObserver(mutations=>{
+    const rows=new Set();
+    for(const m of mutations){
+      const el=m.target instanceof Element ? m.target : m.target?.parentElement;
+      const row=el?.closest?.('.cards-row');
+      if(row) rows.add(row);
+      if(el?.querySelectorAll) el.querySelectorAll('.cards-row').forEach(r=>rows.add(r));
+    }
+    if(rows.size) requestAnimationFrame(()=>rows.forEach(refreshRow));
+  });
+
+  function start(){
+    refreshAll();
+    observer.observe(document.body,{subtree:true,childList:true});
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
+  else start();
+  window.addEventListener('resize',()=>requestAnimationFrame(refreshAll),{passive:true});
+
+  // Standard mouse-wheel: when the pointer is over an overflowing card row,
+  // vertical wheel motion scrolls the row horizontally. At either edge, normal page scrolling resumes.
+  document.addEventListener('wheel',event=>{
+    const row=event.target instanceof Element ? event.target.closest('.cards-row') : null;
+    if(!row || row.scrollWidth <= row.clientWidth + 3) return;
+    if(Math.abs(event.deltaX) >= Math.abs(event.deltaY) && Math.abs(event.deltaX)>0) return; // native trackpad horizontal scroll
+    const delta=event.deltaY;
+    if(!delta) return;
+    const max=row.scrollWidth-row.clientWidth;
+    const canMove=delta>0 ? row.scrollLeft < max-1 : row.scrollLeft > 1;
+    if(!canMove) return;
+    row.scrollLeft=Math.max(0,Math.min(max,row.scrollLeft+delta));
+    event.preventDefault();
+  },{passive:false,capture:true});
+
+  // Mouse drag to pan. A real drag suppresses the following card click; an ordinary click still selects a card.
+  document.addEventListener('pointerdown',event=>{
+    if(event.pointerType!=='mouse' || event.button!==0) return;
+    const row=event.target instanceof Element ? event.target.closest('.cards-row') : null;
+    if(!row || row.scrollWidth <= row.clientWidth + 3) return;
+    drag={row,pointerId:event.pointerId,startX:event.clientX,startLeft:row.scrollLeft,moved:false};
+    try{row.setPointerCapture(event.pointerId);}catch(_){ }
+  },true);
+
+  document.addEventListener('pointermove',event=>{
+    if(!drag || event.pointerId!==drag.pointerId) return;
+    const dx=event.clientX-drag.startX;
+    if(!drag.moved && Math.abs(dx)>=5){
+      drag.moved=true;
+      drag.row.classList.add('ddd-dragging');
+    }
+    if(!drag.moved) return;
+    drag.row.scrollLeft=drag.startLeft-dx;
+    event.preventDefault();
+  },{capture:true,passive:false});
+
+  function endDrag(event){
+    if(!drag || (event?.pointerId!=null && event.pointerId!==drag.pointerId)) return;
+    const {row,pointerId,moved}=drag;
+    if(moved) suppressClickUntil=performance.now()+180;
+    row.classList.remove('ddd-dragging');
+    try{row.releasePointerCapture(pointerId);}catch(_){ }
+    drag=null;
+  }
+  document.addEventListener('pointerup',endDrag,true);
+  document.addEventListener('pointercancel',endDrag,true);
+
+  document.addEventListener('click',event=>{
+    if(performance.now()>suppressClickUntil) return;
+    if(event.target instanceof Element && event.target.closest('.cards-row')){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  },true);
+})();
+</script>
 </body></html>
