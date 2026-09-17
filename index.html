@@ -4484,6 +4484,9 @@
 .rank-ring-gold{background:#e4b52e!important}
 </style>
 
+<!-- v165 Supabase cloud sync: browser-safe publishable client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 </head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
@@ -6649,6 +6652,7 @@
       const clean=rankingSafeName(name);
       try{localStorage.setItem(RANKING_PROFILE_KEY,clean);}catch(_){}
       rankingEnsureProfile(clean);
+      if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("profile_name");
       return clean;
     }
     function rankingKey(name){ return rankingSafeName(name).toLocaleLowerCase("zh-TW"); }
@@ -19314,6 +19318,7 @@
            addLog(`🏆 積分賽結束：${winnerText}`, true);
            setStatus(`積分賽結束：${winnerText}`, "ok");
            rankingRecordLeagueFinal(finalRanked);
+           if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("league_final");
            if(game.settings?.promotionBattle&&game.promotionResult){
              const pr=game.promotionResult;
              if(pr.won){
@@ -19425,7 +19430,10 @@
           t.results[`match${matchInfo.id}`] = {p1:ranked[0],s1:ranked[0].score,n1:ranked[0].maxPressure,p2:ranked[1],s2:ranked[1].score,n2:ranked[1].maxPressure,rounds:game.round};
         }
         rankingRecordTournamentMatch(ranked,matchInfo);
-        if (matchInfo.type === "final") rankingRecordTournamentFinal();
+        if (matchInfo.type === "final") {
+          rankingRecordTournamentFinal();
+          if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("tournament_final");
+        }
         // v134：純AI場也以真人對局相同的中文格式留下場次結算，不再輸出 E|... 機器碼。
         if (isPureAITournamentMatch()) {
           const rankText=ranked.map((p,index)=>`${index+1}.${p.name} ${p.score}VP／氮上限${formatNumber(p.maxPressure)}${p.eliminated?"（死亡）":""}`).join("｜");
@@ -22050,6 +22058,187 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   if(lang==="ja") return kind==="defeat"?window.DDD_AI_DEFEAT_JA[code]:window.DDD_AI_VICTORY_JA[code];
   return null;
 };
+</script>
+
+
+<script>
+/* =========================================================
+   Deep Dark Dive v165 — Supabase first-stage cloud sync
+   - Keeps existing localStorage as the local/offline source.
+   - Creates/reuses an anonymous Supabase Auth user.
+   - Upserts the HUMAN career record into public.ddd_players.
+   - Never embeds a secret/service-role key.
+   ========================================================= */
+(function(){
+  "use strict";
+
+  const DDD_SUPABASE_URL = "https://beffzyqtagssjdfhcewv.supabase.co";
+  const DDD_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_CsbpYbs2ZNfqMjiCaCJFbA_tRbPyyvh";
+
+  const state = window.DDD_CLOUD_STATE = {
+    client: null,
+    user: null,
+    connected: false,
+    lastSyncAt: null,
+    lastReason: null,
+    error: null
+  };
+
+  function cloudLog(message, detail){
+    if(detail !== undefined) console.log(`[DDD Cloud] ${message}`, detail);
+    else console.log(`[DDD Cloud] ${message}`);
+  }
+
+  function cloudWarn(message, detail){
+    state.error = detail || message;
+    console.warn(`[DDD Cloud] ${message}`, detail || "");
+  }
+
+  if(!window.supabase || typeof window.supabase.createClient !== "function") {
+    cloudWarn("Supabase JS 載入失敗；遊戲仍可使用本機 localStorage。", null);
+    return;
+  }
+
+  const client = window.supabase.createClient(DDD_SUPABASE_URL, DDD_SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
+  state.client = client;
+  window.dddCloud = client;
+
+  let authPromise = null;
+  let syncChain = Promise.resolve();
+
+  async function dddEnsureCloudUser(){
+    if(state.user) return state.user;
+    if(authPromise) return authPromise;
+
+    authPromise = (async()=>{
+      const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if(sessionError) cloudWarn("讀取登入狀態失敗，嘗試重新匿名登入。", sessionError);
+
+      let user = sessionData?.session?.user || null;
+      if(!user){
+        const { data, error } = await client.auth.signInAnonymously();
+        if(error) throw error;
+        user = data?.user || data?.session?.user || null;
+      }
+      if(!user) throw new Error("Supabase 未回傳玩家 user_id");
+
+      state.user = user;
+      state.connected = true;
+      state.error = null;
+      cloudLog(`已連線，玩家 ID：${user.id}`);
+      return user;
+    })().catch(err=>{
+      state.connected = false;
+      cloudWarn("匿名登入失敗；請確認 Authentication → Sign In / Providers → Anonymous 已啟用。", err);
+      throw err;
+    }).finally(()=>{ authPromise = null; });
+
+    return authPromise;
+  }
+
+  function buildCareerPayload(user){
+    if(typeof window.careerCurrentProfile !== "function") throw new Error("找不到 careerCurrentProfile()，遊戲尚未完成初始化");
+    const rec = window.careerCurrentProfile();
+    const safeName = (typeof window.rankingSafeName === "function")
+      ? window.rankingSafeName(rec?.name || "玩家")
+      : String(rec?.name || "玩家").trim().slice(0,24) || "玩家";
+
+    return {
+      user_id: user.id,
+      display_name: safeName,
+      league_points: Number(rec?.leaguePoints || 0),
+      tournament_tp: Number(rec?.tournamentTP || 0),
+      rating: Number(rec?.rating || 1000),
+      rated_matches: Number(rec?.ratedMatches || 0),
+      wins: Number(rec?.wins || 0),
+      podiums: Number(rec?.podiums || 0),
+      league_series: Number(rec?.leagueSeries || 0),
+      league_wins: Number(rec?.leagueWins || 0),
+      tournaments: Number(rec?.tournaments || 0),
+      player_rank_level: Number(rec?.playerRankLevel || 1),
+      unlocked_ai_count: Number(rec?.unlockedAICount || 4),
+      stats: {
+        leagueSeriesBySize: rec?.leagueSeriesBySize || {},
+        leagueWinsBySize: rec?.leagueWinsBySize || {},
+        tournamentsBySize: rec?.tournamentsBySize || {},
+        tournamentPodiums: rec?.tournamentPodiums || {},
+        placements: rec?.placements || {},
+        promotionBattles: Number(rec?.promotionBattles || 0),
+        promotionWins: Number(rec?.promotionWins || 0),
+        promotionLosses: Number(rec?.promotionLosses || 0),
+        promotionHistory: Array.isArray(rec?.promotionHistory) ? rec.promotionHistory.slice(-120) : [],
+        abilities: rec?.abilities || {},
+        abilityGames: Number(rec?.abilityGames || 0),
+        abilityHistory: Array.isArray(rec?.abilityHistory) ? rec.abilityHistory.slice(-30) : []
+      },
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  async function doCareerSync(reason){
+    const user = await dddEnsureCloudUser();
+    const payload = buildCareerPayload(user);
+    const { error } = await client
+      .from("ddd_players")
+      .upsert(payload, { onConflict: "user_id" });
+    if(error) throw error;
+
+    state.lastSyncAt = new Date().toISOString();
+    state.lastReason = reason || "manual";
+    state.error = null;
+    cloudLog(`生涯資料同步成功（${state.lastReason}）`, {
+      name: payload.display_name,
+      league_points: payload.league_points,
+      tournament_tp: payload.tournament_tp,
+      rating: payload.rating
+    });
+    return payload;
+  }
+
+  window.dddEnsureCloudUser = dddEnsureCloudUser;
+  window.dddSyncCareer = function(reason="manual"){
+    syncChain = syncChain
+      .catch(()=>{})
+      .then(()=>doCareerSync(reason))
+      .catch(err=>{
+        cloudWarn(`生涯資料同步失敗（${reason}）`, err);
+        return null;
+      });
+    return syncChain;
+  };
+
+  window.dddLoadCloudLeaderboard = async function(limit=100){
+    await dddEnsureCloudUser();
+    const { data, error } = await client
+      .from("ddd_players")
+      .select("user_id,display_name,league_points,tournament_tp,rating,rated_matches,wins,podiums,player_rank_level,unlocked_ai_count,updated_at")
+      .order("tournament_tp", { ascending:false })
+      .order("league_points", { ascending:false })
+      .order("rating", { ascending:false })
+      .limit(Math.max(1, Math.min(500, Number(limit)||100)));
+    if(error) throw error;
+    return data || [];
+  };
+
+  async function bootstrap(){
+    try{
+      await dddEnsureCloudUser();
+      // Wait one task so the original v165 initialization/localStorage migration can finish first.
+      setTimeout(()=>{ void window.dddSyncCareer("startup"); }, 0);
+    }catch(err){
+      // Offline/local play remains available.
+    }
+  }
+
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootstrap, {once:true});
+  else bootstrap();
+})();
 </script>
 
 </body></html>
