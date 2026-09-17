@@ -17,7 +17,7 @@
 <!-- v126: non-mission track target always uses game.targetScore; tournament ranking remains death status -> VP -> Max N2 -> timing -> seat -->
 <!-- v128: remove AI internal decision/explanation messages from action log; AI logic unchanged -->
 <!-- v129: add 27 AI victory declarations + role-themed victory effects; III 寧妙 quote updated per designer request -->
-<!DOCTYPE html><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
+<!DOCTYPE html><!-- v164 music restore: keeps v164 tournament rules; restores v132 external music-folder configuration -->
 <html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
 
@@ -4482,6 +4482,10 @@
 .rank-ring-silver{background:#c9d0d8!important}
 .rank-ring-gold{background:#e4b52e!important}
 </style>
+
+
+  <link rel="preload" as="audio" href="./music/tournament_base.mp3" type="audio/mpeg">
+  <link rel="preload" as="audio" href="./music/tournament_final_tension.mp3" type="audio/mpeg">
 
 </head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
