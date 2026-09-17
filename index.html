@@ -17,7 +17,8 @@
 <!-- v126: non-mission track target always uses game.targetScore; tournament ranking remains death status -> VP -> Max N2 -> timing -> seat -->
 <!-- v128: remove AI internal decision/explanation messages from action log; AI logic unchanged -->
 <!-- v129: add 27 AI victory declarations + role-themed victory effects; III 寧妙 quote updated per designer request -->
-<!DOCTYPE html><!-- v164 music restore: keeps v164 tournament rules; restores v132 external music-folder configuration -->
+<!-- v165: all playable modes use six external music/ MP3 tracks; recorded music is not embedded in HTML -->
+<!DOCTYPE html><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
 
@@ -4483,14 +4484,10 @@
 .rank-ring-gold{background:#e4b52e!important}
 </style>
 
-
-  <link rel="preload" as="audio" href="./music/tournament_base.mp3" type="audio/mpeg">
-  <link rel="preload" as="audio" href="./music/tournament_final_tension.mp3" type="audio/mpeg">
-
 </head><body>
 <div id="swimScene" class="swim-scene" aria-hidden="true"></div>
 <main class="app">
-<header class="topbar"><div class="game-brand"><img class="title-banner" src="./images/banner2-01.png" alt="Deep Dark Dive title banner"></div><div class="top-actions"><button id="leaderboardBtn" class="btn" type="button" aria-label="AI排行榜">🤖 AI</button><button id="soundBtn" class="btn" type="button" aria-label="音效與震動設定">🔊📳</button><button id="languageBtn" class="btn language-flag-btn" type="button" aria-label="目前介面語言：中文；點擊切換語言">中文</button><button id="newGameBtn" class="btn primary" type="button" aria-label="新局" title="新局">↻</button></div><button id="bracketBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button></header>
+<header class="topbar"><div class="game-brand"><img class="title-banner" src="./images/banner2-01.png" alt="Deep Dark Dive title banner"></div><div class="top-actions"><button id="leaderboardBtn" class="btn" type="button" aria-label="AI排行榜">🤖 AI</button><button id="musicBtn" class="btn" type="button" aria-label="音樂">🎵</button><button id="soundBtn" class="btn" type="button" aria-label="音效與震動設定">🔊📳</button><button id="languageBtn" class="btn language-flag-btn" type="button" aria-label="目前介面語言：中文；點擊切換語言">中文</button><button id="newGameBtn" class="btn primary" type="button" aria-label="新局" title="新局">↻</button></div><button id="bracketBtn" type="button" hidden aria-hidden="true" tabindex="-1"></button></header>
 <div class="game-shell"><div class="game-content">
 <section id="rulesPanel" class="rules-panel" aria-label="遊戲規則">
 <h2>遊戲簡介</h2>
@@ -21587,6 +21584,154 @@
         }
       }
     });
+
+
+    /* v165：六首外部錄製音樂供所有可玩模式使用。音訊檔維持在 ./music/，不嵌入 HTML。 */
+    const ALL_MODE_MUSIC_PATHS=Object.freeze({
+      deepBase:"./music/deep_base.mp3",
+      sonar:"./music/sonar.mp3",
+      heartbeat:"./music/n2_heartbeat.mp3",
+      finalTension:"./music/final_tension.mp3",
+      tournamentBase:"./music/tournament_base.mp3",
+      tournamentFinal:"./music/tournament_final_tension.mp3"
+    });
+    function readMusicPreference(){
+      try{return localStorage.getItem("deepDiveMusic")!=="off";}catch(_){return true;}
+    }
+    function saveMusicPreference(){
+      try{localStorage.setItem("deepDiveMusic",musicEnabled?"on":"off");}catch(_){}
+    }
+    let musicEnabled=readMusicPreference();
+    let allModeRecordedMusic=null;
+    let recordedMusicUnlocked=false;
+
+    function ensureAllModeRecordedMusic(){
+      if(allModeRecordedMusic) return allModeRecordedMusic;
+      const make=(src)=>{
+        const a=new Audio(src);
+        a.preload="auto";
+        a.loop=true;
+        a.volume=0;
+        a.playsInline=true;
+        a.crossOrigin="anonymous";
+        return a;
+      };
+      allModeRecordedMusic={
+        deepBase:make(ALL_MODE_MUSIC_PATHS.deepBase),
+        sonar:make(ALL_MODE_MUSIC_PATHS.sonar),
+        heartbeat:make(ALL_MODE_MUSIC_PATHS.heartbeat),
+        finalTension:make(ALL_MODE_MUSIC_PATHS.finalTension),
+        tournamentBase:make(ALL_MODE_MUSIC_PATHS.tournamentBase),
+        tournamentFinal:make(ALL_MODE_MUSIC_PATHS.tournamentFinal)
+      };
+      return allModeRecordedMusic;
+    }
+    function recordedMusicTracks(){
+      const m=ensureAllModeRecordedMusic();
+      return Object.values(m);
+    }
+    function unlockAllModeRecordedMusic(){
+      if(recordedMusicUnlocked || !musicEnabled) return;
+      recordedMusicUnlocked=true;
+      const tracks=recordedMusicTracks();
+      tracks.forEach(a=>{try{a.volume=0;a.currentTime=0;Promise.resolve(a.play()).catch(()=>{});}catch(_){}});
+      setTimeout(()=>updateDynamicAudioState(),30);
+    }
+    function fadeRecordedTrack(audio,target,duration=420){
+      if(!audio) return;
+      if(audio._dddFadeFrame) cancelAnimationFrame(audio._dddFadeFrame);
+      const from=Number(audio.volume)||0;
+      const to=Math.max(0,Math.min(1,Number(target)||0));
+      const start=performance.now();
+      const step=(now)=>{
+        const p=Math.min(1,(now-start)/Math.max(1,duration));
+        const eased=1-Math.pow(1-p,3);
+        try{audio.volume=from+(to-from)*eased;}catch(_){}
+        if(p<1) audio._dddFadeFrame=requestAnimationFrame(step); else audio._dddFadeFrame=null;
+      };
+      audio._dddFadeFrame=requestAnimationFrame(step);
+    }
+    function stopAllModeRecordedMusic(reset=false){
+      if(!allModeRecordedMusic) return;
+      recordedMusicTracks().forEach(a=>{
+        if(a._dddFadeFrame){cancelAnimationFrame(a._dddFadeFrame);a._dddFadeFrame=null;}
+        try{a.pause();a.volume=0;a.playbackRate=1;if(reset)a.currentTime=0;}catch(_){}
+      });
+      recordedMusicUnlocked=false;
+    }
+    function updateMusicButton(){
+      const btn=document.getElementById("musicBtn");
+      if(!btn)return;
+      btn.textContent=musicEnabled?"🎵":"🔇🎵";
+      btn.setAttribute("aria-pressed",String(musicEnabled));
+      btn.title=musicEnabled?"關閉音樂":"開啟音樂";
+    }
+    function isPlayableMusicMode(){
+      return ["quick","league","tournament","tutorial","maldives","gauntlet","normal","solo"].includes(String(game?.mode||""));
+    }
+    function recordedThreatState(){
+      const live=(game.players||[]).filter(p=>!p.eliminated && !p.missionIncapacitated);
+      let maxRatio=0;
+      live.forEach(p=>{
+        const lim=Math.max(1,Number(p.maxPressure)||1), q=Number(pressure(p))||0;
+        maxRatio=Math.max(maxRatio,q/lim);
+      });
+      const target=Math.max(1,Number(game.targetScore)||1);
+      const nearWin=live.some(p=>Number(p.score||0)>=Math.max(1,target-3));
+      return {maxRatio:Math.max(0,maxRatio),nearWin};
+    }
+
+    // v165 override：停用舊的合成 BGM / 舊錦標專用播放器，全部改由 music/ 六首錄音控制。
+    updateDynamicAudioState=function(){
+      silenceSynthDynamicMusic(.08);
+      stopTournamentRecordedMusic(false);
+      stopHeartbeatLayer();
+      stopChampionshipBeat();
+      if(!musicEnabled || game.fastMode || game.simulationMode || game.gameOver || !isPlayableMusicMode()){
+        if(allModeRecordedMusic) recordedMusicTracks().forEach(a=>fadeRecordedTrack(a,0,180));
+        return;
+      }
+      const m=ensureAllModeRecordedMusic();
+      if(!recordedMusicUnlocked) return; // 需先由玩家手勢解鎖瀏覽器音訊
+      recordedMusicTracks().forEach(a=>{if(a.paused)Promise.resolve(a.play()).catch(()=>{});});
+      const state=recordedThreatState();
+      const ratio=Math.max(0,Math.min(1.18,state.maxRatio));
+      const heartbeatLevel=Math.max(0,Math.min(1,(ratio-.52)/.48));
+      try{m.heartbeat.playbackRate=.88+heartbeatLevel*.72;}catch(_){}
+
+      if(String(game.mode)==="tournament"){
+        fadeRecordedTrack(m.deepBase,0,300);
+        fadeRecordedTrack(m.finalTension,0,260);
+        fadeRecordedTrack(m.tournamentBase,.42,520);
+        fadeRecordedTrack(m.tournamentFinal,state.nearWin?.24:0,340);
+        // 聲納和 N₂ 心跳是跨模式的共同深海識別層。
+        fadeRecordedTrack(m.sonar,.09,500);
+      }else{
+        fadeRecordedTrack(m.tournamentBase,0,300);
+        fadeRecordedTrack(m.tournamentFinal,0,260);
+        fadeRecordedTrack(m.deepBase,.30,520);
+        fadeRecordedTrack(m.sonar,.13,500);
+        fadeRecordedTrack(m.finalTension,state.nearWin?.20:0,340);
+      }
+      fadeRecordedTrack(m.heartbeat,.62*heartbeatLevel,240);
+    };
+    silenceDynamicAudio=function(){
+      stopHeartbeatLayer();stopChampionshipBeat();stopTournamentRecordedMusic(false);silenceSynthDynamicMusic(.08);
+      if(allModeRecordedMusic) recordedMusicTracks().forEach(a=>fadeRecordedTrack(a,0,120));
+    };
+
+    // 第一次點擊/觸控即可解鎖六首外部音訊；之後切換任何模式都能直接播放。
+    const musicUnlockOnce=()=>{unlockAllModeRecordedMusic();};
+    document.addEventListener("pointerdown",musicUnlockOnce,{passive:true,once:true});
+    document.addEventListener("touchstart",musicUnlockOnce,{passive:true,once:true});
+    document.getElementById("musicBtn")?.addEventListener("click",()=>{
+      musicEnabled=!musicEnabled;
+      saveMusicPreference();
+      updateMusicButton();
+      if(musicEnabled){unlockAllModeRecordedMusic();updateDynamicAudioState();}
+      else stopAllModeRecordedMusic(false);
+    });
+    updateMusicButton();
 
     document.getElementById("leaderboardBtn")?.addEventListener("click",()=>showLeaderboardModal("rating"));
     els.soundBtn.addEventListener("click", () => {
