@@ -27,6 +27,7 @@
 <!DOCTYPE html>
 <!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja --><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head>
+<!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
 <!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
 
@@ -9738,7 +9739,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         aiCodes: seatControllers.slice(1).map(value => value === "human" ? 44 : Number(value || 44)),
         seatControllers: seatControllers.slice(),
         mode: requestedMode,
-        tournamentSize: [8,12,16,18,24].includes(Number(settings.tournamentSize)) ? Number(settings.tournamentSize) : 8,
+        tournamentSize: [4,8,12,16,18,24].includes(Number(settings.tournamentSize)) ? Number(settings.tournamentSize) : 4,
         tournamentHumanAI: seatControllers[0] !== "human" ? Number(seatControllers[0]) : null,
         normalHumanAI: seatControllers[0] !== "human" ? Number(seatControllers[0]) : null,
         enforceCareerUnlock:Boolean(settings.enforceCareerUnlock),
@@ -20485,7 +20486,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const entryLabels={solo:"單人模式",league:"積分模式",maldives:"任務模式",tournament:"錦標模式"};
       const entryIcons={solo:"S",league:"P",maldives:"M",tournament:"T"};
       const modeOptions=modeEntry==="tournament"
-        ? [12,16,24,32].map(size=>`<option value="tournament${size}" ${careerTournamentUnlocked(size)?"":"disabled"}>${careerTournamentUnlocked(size)?"":"🔒"}${size}人錦標賽</option>`).join("")
+        ? [4,8,12,16,18,24].map(size=>`<option value="tournament${size}" ${careerTournamentUnlocked(size)?"":"disabled"}>${careerTournamentUnlocked(size)?"":"🔒"}${size}人錦標賽</option>`).join("")
         : modeEntry==="solo"?'<option value="solo">單人模式</option>'
         : modeEntry==="league"?'<option value="league">積分模式</option>'
         : modeEntry==="maldives"?'<option value="maldives">任務模式</option>'
@@ -20522,8 +20523,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       els.modalActions.innerHTML="";els.modalError.textContent="";
       const modeSelect=document.getElementById("setupMode"),countSelect=document.getElementById("setupPlayerCount"),classicMissionSelect=document.getElementById("classicMissionSelect"),missionCountSelect=document.getElementById("missionPlayerCount"),missionDaysSelect=document.getElementById("missionDays"),humanDifficultySelect=document.getElementById("humanDifficultySelect");
       const checks=[...els.modalBody.querySelectorAll(".color-options input")],aiSelects=document.getElementById("aiSelects"),aiProfileCard=document.getElementById("aiProfileCard");
-      const allowedTournamentSizes=[12,16,24,32].filter(careerTournamentUnlocked);
-      const requestedSaved=[8,12,16,18,24].includes(Number(game.settings.tournamentSize))?Number(game.settings.tournamentSize):32;
+      const allowedTournamentSizes=[4,8,12,16,18,24].filter(careerTournamentUnlocked);
+      const requestedSaved=[4,8,12,16,18,24].includes(Number(game.settings.tournamentSize))?Number(game.settings.tournamentSize):4;
       const savedTournamentSize=allowedTournamentSizes.includes(requestedSaved)?requestedSaved:(allowedTournamentSizes.at(-1)||12);
       const savedMode=modeEntry==="tournament"?`tournament${savedTournamentSize}`:(modeEntry==="solo"?"solo":modeEntry==="league"?"league":modeEntry==="maldives"?"maldives":"league");modeSelect.value=savedMode;
       countSelect.value=modeEntry==="league" ? "2" : String(Math.max(2,Math.min(5,Number(game.settings.playerCount)||2)));
@@ -20695,7 +20696,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const mode=modeSelect.value,isSolo=mode==="solo",isMission=mode==="maldives",isTourney=mode.startsWith("tournament");
         const mission=selectedMission();
         const count=isSolo?1:(isMission?Number(missionCountSelect.value):(isTourney?Number(mode.replace("tournament","")):Number(countSelect.value)));
-        if(isTourney&&!careerTournamentUnlocked(count)){els.modalError.textContent=`${count}人錦標尚未解鎖；需要玩家達到 ${{12:"II",16:"IV",24:"VI",32:"VIII"}[count]}級。`;return;}
+        if(isTourney&&!careerTournamentUnlocked(count)){els.modalError.textContent=`${count}人錦標尚未解鎖；需要玩家達到 ${{4:"II",8:"III",12:"IV",16:"V",18:"VI",24:"VIII"}[count]}級。`;return;}
         const required=isSolo?2:(isMission?missionColorCount(mission):count);
         const leagueColors=mode==="league"?selectedLeagueColors():[];
         if(mode==="league"&&leagueColors.length!==required){els.modalError.textContent=`${count}人積分局必須選擇${required}種牌色，目前選了${leagueColors.length}種。`;return;}
