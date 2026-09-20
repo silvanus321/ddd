@@ -6939,8 +6939,12 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       return Math.min(AI_ORDER.length,AI_UNLOCK_INITIAL+Math.floor(careerTotalPoints(rec)/AI_UNLOCK_STEP_POINTS));
     }
     function careerLevelUnlockCount(rec){
-      // v170：玩家每升一個大等級固定開放該級3名AI；不再由EXP或錦標獎牌額外跳級解鎖。
-      return Math.min(AI_ORDER.length,Math.max(3,careerPlayerLevel(rec)*3));
+      // v179：升到新大等級先解鎖該級前2名AI；升到該級金階後才解鎖第3名關主AI。
+      const lv=careerPlayerLevel(rec);
+      const rings=careerRingCount(rec);
+      const completedLowerTiers=Math.max(0,lv-1)*3;
+      const currentTierUnlocked=rings>=3?3:2;
+      return Math.min(AI_ORDER.length,completedLowerTiers+currentTierUnlocked);
     }
     function careerResolvedUnlockCount(rec){
       return careerLevelUnlockCount(rec);
@@ -6980,7 +6984,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const pct=count>=cap?100:rankingClamp((points-prevReq)/AI_UNLOCK_STEP_POINTS,0,1)*100;
       const tour=[4,8,12,16,18,24].map(size=>`${careerPlayerLevel(rec)>=tournamentRequiredLevel(size)?"✅":"🔒"}${size}強`).join("　");
       const badge=careerRankBadgeHtml(rec);
-      const unlockCopy=count>=AI_ORDER.length?"全部AI已解鎖":`目前${ROMAN_LEVELS[careerPlayerLevel(rec)-1]}級可挑戰 ${count} 名AI；晉級後開放下一級3名AI`;
+      const unlockCopy=count>=AI_ORDER.length?"全部AI已解鎖":`目前${ROMAN_LEVELS[careerPlayerLevel(rec)-1]}級可挑戰 ${count} 名AI；升級先解鎖下一級2名AI，金級再解鎖關主AI`;
       return `<div class="career-progress-card"><b>玩家等級 ${badge}</b><br><b>可挑戰AI ${count}/${AI_ORDER.length}</b>｜總 EXP ${points}<div class="career-progress-bar"><i style="--career-pct:${pct.toFixed(1)}%"></i></div>${unlockCopy}<br>${tour}</div>`;
     }
     function abilityConfidenceLabel(games){const n=Number(games||0);return n<=0?"初始基準":n>=100?"高可信度":n>=30?"穩定":n>=10?"暫定":"初步";}
@@ -23113,13 +23117,45 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   const nextTournamentForLevel=level=>TOURNAMENT_UNLOCKS.find(x=>x.level>Number(level))||null;
   const aiTierMembers=level=>AI_LADDER_WEAK_TO_STRONG.filter(x=>x.tier===romanLevel(level));
   const aiNamesAtLevel=(level,lang=window.gameLanguage||'zh')=>aiTierMembers(level).map(x=>localizedAINameByCode(x.code,lang)||x.name);
+  const aiTrainingNamesAtLevel=(level,lang=window.gameLanguage||'zh')=>aiTierMembers(level).slice(0,2).map(x=>localizedAINameByCode(x.code,lang)||x.name);
+  const aiGatekeeperAtLevel=level=>aiTierMembers(level)[2]||null;
 
   function careerStateFromRecord(rec){
     const fallback={name:localPlayerName(),type:'human',playerRankLevel:1,leaguePoints:0,tournamentTP:0};
     const r=rec||fallback;
     const level=Math.max(1,Math.min(9,Number(r.playerRankLevel||1)));
     const rings=careerRingCount(r);
-    return {level,rings,totalExp:totalExp(r),aiCount:Math.min(AI_ORDER.length,level*3),tournaments:tournamentUnlocksForLevel(level)};
+    return {level,rings,totalExp:totalExp(r),aiCount:careerResolvedUnlockCount(r),tournaments:tournamentUnlocksForLevel(level)};
+  }
+  function careerNextStageInfo(rec,lang=window.gameLanguage||'zh'){
+    const state=careerStateFromRecord(rec),thresholds=careerTierThresholds(state.level),total=state.totalExp;
+    if(total<thresholds.silver){
+      const need=Math.max(0,thresholds.silver-total);
+      return {kind:'silver',need,label:`${romanLevel(state.level)} ${ringName(2,lang)}`.trim()};
+    }
+    if(total<thresholds.gold){
+      const need=Math.max(0,thresholds.gold-total);
+      return {kind:'gold',need,label:`${romanLevel(state.level)} ${ringName(3,lang)}`.trim()};
+    }
+    if(state.level>=9) return {kind:'max',need:0,label:`${romanLevel(state.level)} ${ringName(3,lang)}`.trim()};
+    return {kind:'promotion',need:0,label:romanLevel(state.level+1)};
+  }
+  function careerProgressText(rec,lang=window.gameLanguage||'zh'){
+    const state=careerStateFromRecord(rec),current=`${romanLevel(state.level)}${ringName(state.rings,lang)}`;
+    const next=careerNextStageInfo(rec,lang);
+    if(next.kind==='silver'||next.kind==='gold'){
+      if(lang==='en') return `${current} | ${next.need} EXP to ${next.label}`;
+      if(lang==='ja') return `${current}｜${next.label}まで${next.need} EXP`;
+      return `${current}｜距${next.label.replace(/\s+/g,'')} ${next.need} EXP`;
+    }
+    if(next.kind==='promotion'){
+      if(lang==='en') return `${current} | Gatekeeper unlocked`;
+      if(lang==='ja') return `${current}｜関門AI解放`;
+      return `${current}｜關主AI已解鎖`;
+    }
+    if(lang==='en') return `${current} | Maximum`;
+    if(lang==='ja') return `${current}｜最高`;
+    return `${current}｜最高階`;
   }
   function currentLocalRank(){
     const key=rankingKey(localPlayerName());
@@ -23140,11 +23176,15 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   function unlockDiff(before,after){
     const out=[];
     if(after.level>before.level){
-      out.push({kind:'ai',level:after.level});
+      // 新大等級只先開放前2名AI；該級關主留到金階才解鎖。
+      out.push({kind:'ai',level:after.level,count:2});
       const unlockedNow=TOURNAMENT_UNLOCKS.filter(x=>x.level>before.level&&x.level<=after.level);
       unlockedNow.forEach(x=>out.push({kind:'tournament',size:x.size}));
     }
-    if(before.rings<3&&after.rings>=3&&after.level<9) out.push({kind:'promotion'});
+    if(before.level===after.level&&before.rings<3&&after.rings>=3){
+      out.push({kind:'boss',level:after.level});
+      if(after.level<9) out.push({kind:'promotion'});
+    }
     return out;
   }
 
@@ -23298,7 +23338,8 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     if(!unlocks.length) return `<div>${t.none}</div>`;
     return unlocks.map(u=>{
       if(u.kind==='promotion') return `<div>🔓 ${t.unlockPromotion}</div>`;
-      if(u.kind==='ai') return `<div>🔓 ${fmt(t.unlockAI,{tier:romanLevel(u.level),names:aiNamesAtLevel(u.level,lang).map(escapeHtml).join(' / ')})}</div>`;
+      if(u.kind==='ai') return `<div>🔓 ${fmt(t.unlockAI,{tier:romanLevel(u.level),names:aiTrainingNamesAtLevel(u.level,lang).map(escapeHtml).join(' / ')})}</div>`;
+      if(u.kind==='boss'){const boss=aiGatekeeperAtLevel(u.level),name=boss?(localizedAINameByCode(boss.code,lang)||boss.name):'-';return `<div>🔓 ${fmt(t.unlockAI,{tier:romanLevel(u.level),names:escapeHtml(name)})}</div>`;}
       if(u.kind==='tournament') return `<div>🔓 ${fmt(t.unlockTournament,{size:u.size})}</div>`;
       return '';
     }).join('');
@@ -23310,8 +23351,11 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const name=promotion.target?(localizedAINameByCode(promotion.target.code,lang)||promotion.target.name):'-';
       promotionText=`${romanLevel(state.level)} ${escapeHtml(name)}｜${promotion.ready?t.ready:fmt(t.needExp,{n:promotion.need})}`;
     }
+    const boss=aiGatekeeperAtLevel(state.level);
     const nextLevel=state.level<9?state.level+1:null;
-    const nextAI=nextLevel?`${romanLevel(nextLevel)}｜${aiNamesAtLevel(nextLevel,lang).map(escapeHtml).join(' / ')}`:t.allAI;
+    const nextAI=state.rings<3&&boss
+      ? `${romanLevel(state.level)}｜${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)} (${lang==='en'?'Gold unlock':lang==='ja'?'金で解放':'金級解鎖'})`
+      : nextLevel?`${romanLevel(nextLevel)}｜${aiTrainingNamesAtLevel(nextLevel,lang).map(escapeHtml).join(' / ')}`:t.allAI;
     const nt=nextTournamentForLevel(state.level);
     const nextTournament=nt?`${romanLevel(nt.level)}｜${nt.size}${lang==='en'?'-player':lang==='ja'?'強':'強'}`:t.allTournament;
     return `<div class="result-next"><b>${t.next}</b><div>${t.nextPromotion}：${promotionText}</div><div>${t.nextAI}：${nextAI}</div><div>${t.nextTournament}：${nextTournament}</div></div>`;
@@ -23484,16 +23528,25 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 
   // Career cards now consistently say EXP and level-based unlocks.
   careerRankSummaryHtml=function(rec=careerCurrentProfile()){
-    const lang=window.gameLanguage||'zh',state=careerStateFromRecord(rec),metal=careerRankMetal(rec),target=promotionTargetInfo(rec),playerName=rankingSafeName(rec?.name||rankingProfileName());
-    const name=target?.target?(localizedAINameByCode(target.target.code,lang)||target.target.name):'';
+    const lang=window.gameLanguage||'zh',state=careerStateFromRecord(rec),metal=careerRankMetal(rec),playerName=rankingSafeName(rec?.name||rankingProfileName()),next=careerNextStageInfo(rec,lang),boss=aiGatekeeperAtLevel(state.level);
     const line1=lang==='en'?`${romanLevel(state.level)} ${ringIconHtml(metal.key)} <b>${escapeHtml(playerName)}</b> has <b>${state.totalExp} EXP</b>.`:lang==='ja'?`${romanLevel(state.level)}${ringIconHtml(metal.key)} <b>${escapeHtml(playerName)}</b>｜累計 <b>${state.totalExp} EXP</b>`:`${romanLevel(state.level)}${ringIconHtml(metal.key)}<b>${escapeHtml(playerName)}</b>目前共<b>${state.totalExp}</b> EXP。`;
-    const line2=target.done?(lang==='en'?'Maximum level reached.':lang==='ja'?'最高レベルに到達。':'已達最高階級。'):(target.ready?(lang==='en'?`Promotion challenge ready: ${escapeHtml(name)}.`:lang==='ja'?`昇格戦に挑戦可能：${escapeHtml(name)}。`:`已可挑戰${romanLevel(state.level)}金 ${escapeHtml(name)}。`):(lang==='en'?`${target.need} EXP until promotion challenge vs ${escapeHtml(name)}.`:lang==='ja'?`${escapeHtml(name)}への昇格戦まであと${target.need} EXP。`:`挑戰${romanLevel(state.level)}金 ${escapeHtml(name)}還需<b>${target.need}</b> EXP。`));
+    let line2='';
+    if(next.kind==='silver'||next.kind==='gold'){
+      line2=lang==='en'?`${next.need} EXP to ${next.label}.`:lang==='ja'?`${next.label}まであと<b>${next.need}</b> EXP。`:`距${next.label.replace(/\s+/g,'')}還差<b>${next.need}</b> EXP。`;
+    }else if(next.kind==='promotion'){
+      const name=boss?(localizedAINameByCode(boss.code,lang)||boss.name):'-';
+      line2=lang==='en'?`Gatekeeper unlocked: ${escapeHtml(name)}. Win 3 straight to level up.`:lang==='ja'?`関門AI解放：${escapeHtml(name)}。3連勝で昇格。`:`關主AI已解鎖：${escapeHtml(name)}。3連勝即可升級。`;
+    }else line2=lang==='en'?'Maximum rank reached.':lang==='ja'?'最高階級に到達。':'已達最高階級。';
     return `<div class="career-rank-card career-rank-card-compact"><div class="career-rank-line">${line1}</div><div class="career-rank-line">${line2}</div></div>`;
   };
   careerProgressSummaryHtml=function(rec=careerCurrentProfile()){
-    const lang=window.gameLanguage||'zh',state=careerStateFromRecord(rec),badge=careerRankBadgeHtml(rec),tour=TOURNAMENT_UNLOCKS.map(x=>`${state.level>=x.level?'✅':'🔒'}${x.size}${lang==='en'?'-player':lang==='ja'?'強':'強'}`).join('　');
-    const aiCopy=state.level>=9?(lang==='en'?'All AI unlocked':lang==='ja'?'全AI解放済み':'全部AI已解鎖'):(lang==='en'?`${state.aiCount}/27 AI available; Level ${romanLevel(state.level+1)} unlocks 3 more.`:lang==='ja'?`${state.aiCount}/27 AI解放；${romanLevel(state.level+1)}級で次の3体を解放。`:`已解鎖AI ${state.aiCount}/27；升到${romanLevel(state.level+1)}級再解鎖3名AI。`);
-    return `<div class="career-progress-card"><b>${lang==='en'?'Player Level':lang==='ja'?'プレイヤーレベル':'玩家等級'} ${badge}</b><br><b>${state.totalExp} EXP</b><div class="career-progress-bar"><i style="--career-pct:${Math.min(100,(state.rings/3)*100).toFixed(1)}%"></i></div>${aiCopy}<br>${tour}</div>`;
+    const lang=window.gameLanguage||'zh',state=careerStateFromRecord(rec),badge=careerRankBadgeHtml(rec),tour=TOURNAMENT_UNLOCKS.map(x=>`${state.level>=x.level?'✅':'🔒'}${x.size}${lang==='en'?'-player':lang==='ja'?'強':'強'}`).join('　'),next=careerNextStageInfo(rec,lang),boss=aiGatekeeperAtLevel(state.level);
+    let progressCopy='';
+    if(next.kind==='silver'||next.kind==='gold') progressCopy=lang==='en'?`${next.need} EXP to ${next.label}`:lang==='ja'?`${next.label}まであと${next.need} EXP`:`距${next.label.replace(/\s+/g,'')}還差 ${next.need} EXP`;
+    else if(next.kind==='promotion') progressCopy=lang==='en'?'Gold reached; gatekeeper challenge unlocked':lang==='ja'?'金到達；関門AI挑戦を解放':'已達金級；關主AI挑戰已解鎖';
+    else progressCopy=lang==='en'?'Maximum rank':lang==='ja'?'最高階級':'最高階級';
+    const bossCopy=boss?(state.rings>=3?(lang==='en'?`Gatekeeper unlocked: ${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`:lang==='ja'?`関門AI解放：${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`:`關主AI已解鎖：${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`):(lang==='en'?`Gatekeeper unlocks at ${romanLevel(state.level)} Gold`:lang==='ja'?`関門AIは${romanLevel(state.level)}金で解放`:`關主AI於${romanLevel(state.level)}金級解鎖`)):'';
+    return `<div class="career-progress-card"><b>${lang==='en'?'Player Level':lang==='ja'?'プレイヤーレベル':'玩家等級'} ${badge}</b><br><b>${state.totalExp} EXP</b>｜${progressCopy}<div class="career-progress-bar"><i style="--career-pct:${Math.min(100,(state.rings/3)*100).toFixed(1)}%"></i></div>${lang==='en'?'Available AI':lang==='ja'?'解放AI':'已解鎖AI'} ${state.aiCount}/27${bossCopy?`<br>${bossCopy}`:''}<br>${tour}</div>`;
   };
 
   // Unified EXP leaderboard, including AI EXP multiplied by AI level.
@@ -23506,9 +23559,18 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     rows=rows.slice().sort(rankingCompareUnified);
     els.modalText.textContent=scope==='global'?(cloudError?tr.cloudFail:tr.leaderboardGlobalHelp):tr.leaderboardLocalHelp;
     const tabs=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px"><button type="button" class="btn ${scope==='global'?'primary':''}" data-leaderboard-scope="global">🌐 ${tr.globalPlayers}</button><button type="button" class="btn ${scope==='local'?'primary':''}" data-leaderboard-scope="local">🤖 ${tr.localAI}</button></div>`;
-    let html=tabs+`<div style="overflow:auto;max-height:58vh"><table class="leaderboard-table"><thead><tr><th>#</th><th>${tr.player}</th><th>EXP</th><th>${tr.rating}</th></tr></thead><tbody>`;
-    rows.forEach((r,i)=>{const isMe=Boolean(r._isCurrentUser)||(r.type!=='ai'&&rankingKey(r.name)===myKey),recordKey=r._cloudRecordKey||(r.type==='ai'?rankingAIKey(r.aiCode):rankingKey(r.name));html+=`<tr class="${isMe?'leaderboard-me':''}"><td>${i+1}</td><td><button type="button" class="leaderboard-name-btn" data-ranking-record="${escapeHtml(recordKey)}">${leaderboardDisplayNameHtml(r,isMe)}</button></td><td><b>${totalExp(r)}</b></td><td>${Number(r.rating||0)}</td></tr>`;});
-    if(!rows.length)html+=`<tr><td colspan="4">${tr.noRows}</td></tr>`;html+='</tbody></table></div>';els.modalBody.innerHTML=html;els.modalActions.innerHTML='';
+    const progressHead=(window.gameLanguage||'zh')==='en'?'Level-up EXP':(window.gameLanguage||'zh')==='ja'?'レベルアップEXP':'升級EXP';
+    let html=tabs+`<div style="overflow:auto;max-height:58vh"><table class="leaderboard-table"><thead><tr><th>#</th><th>${tr.player}</th><th>${progressHead}</th><th>EXP</th><th>${tr.rating}</th></tr></thead><tbody>`;
+    rows.forEach((r,i)=>{
+      const isMe=Boolean(r._isCurrentUser)||(r.type!=='ai'&&rankingKey(r.name)===myKey),recordKey=r._cloudRecordKey||(r.type==='ai'?rankingAIKey(r.aiCode):rankingKey(r.name));
+      let progress='—';
+      if(r.type!=='ai'){
+        const next=careerNextStageInfo(r,window.gameLanguage||'zh');
+        progress=next.kind==='max'?'—':`${Math.max(0,Number(next.need||0))} EXP`;
+      }
+      html+=`<tr class="${isMe?'leaderboard-me':''}"><td>${i+1}</td><td><button type="button" class="leaderboard-name-btn" data-ranking-record="${escapeHtml(recordKey)}">${leaderboardDisplayNameHtml(r,isMe)}</button></td><td style="white-space:nowrap;font-size:.72rem">${escapeHtml(progress)}</td><td><b>${totalExp(r)}</b></td><td>${Number(r.rating||0)}</td></tr>`;
+    });
+    if(!rows.length)html+=`<tr><td colspan="5">${tr.noRows}</td></tr>`;html+='</tbody></table></div>';els.modalBody.innerHTML=html;els.modalActions.innerHTML='';
     els.modalActions.append(makeButton(tr.rename,'btn',()=>{void requestUniquePlayerRename(scope);}),makeButton(tr.refresh,'btn',()=>{void showLeaderboardModal(scope);}),makeButton(tr.close,'btn primary',closeModal));
     els.modalBody.querySelectorAll('[data-leaderboard-scope]').forEach(btn=>btn.addEventListener('click',()=>{void showLeaderboardModal(btn.dataset.leaderboardScope);}));
     els.modalBody.querySelectorAll('[data-ranking-record]').forEach(btn=>btn.addEventListener('click',()=>showLeaderboardDetail(btn.dataset.rankingRecord)));
@@ -23842,5 +23904,11 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   showSetupModal=function(initial=false,forcedMode=null){const raw=String(forcedMode||'league');if(raw==='quick'||raw==='solo'||raw==='general'||raw==='tutorial')return showGeneralSetup(initial);if(raw.startsWith('tournament'))return showMergedSetup('tournament',initial);return showMergedSetup('league',initial);};
 })();
 </script>
+
+<!-- v179: leaderboard next-rank EXP progress + 2-AI-on-level-up / gold-gatekeeper unlock -->
+<style id="ddd-v179-career-progress">
+.leaderboard-table td:nth-child(3){max-width:190px;line-height:1.25}
+@media(max-width:620px){.leaderboard-table td:nth-child(3){font-size:.66rem!important;max-width:145px}}
+</style>
 
 </body></html>
