@@ -27,6 +27,7 @@
 <!DOCTYPE html>
 <!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja --><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head>
+  <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
 <!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
@@ -6825,9 +6826,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     const ABILITY_HISTORY_LIMIT=30;
     const AI_UNLOCK_INITIAL=3;
     const AI_UNLOCK_STEP_POINTS=1000;
-    // v162：玩家階級改採「累積總分」門檻，不再每次升級後歸零重算。
-    // 每個級數的每一階段成本＝100分 × 級數。
-    // 例：I銅0／I銀100／I金200；II銅400／II銀600／II金800。
+    // v183：玩家階級採固定累計 EXP 門檻；每級每一階段成本＝100 EXP × 級數。
+    // 例：I銅0／I銀100／I金200；II銅300／II銀500／II金700；IV銅1800／IV銀2200／IV金2600。
     const PLAYER_RANK_MAX = 9;
     const PLAYER_RANK_RINGS = Object.freeze(["","銅","銀","金"]);
     const ROMAN_LEVELS = Object.freeze(["I","II","III","IV","V","VI","VII","VIII","IX"]);
@@ -6839,8 +6839,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     }
     function careerTierThresholds(level){
       const lv=Math.max(1,Math.min(PLAYER_RANK_MAX,Math.floor(Number(level)||1)));
-      // bronze = 0,400,1100,2100...；每個後續階段再加 lv*100。
-      const bronze=150*lv*lv-50*lv-100;
+      // v183 固定累計 EXP 表：銅 = 150 × lv × (lv-1)，銀/金各再加 100 × lv。
+      // I 0/100/200；II 300/500/700；III 900/1200/1500；IV 1800/2200/2600；
+      // V 3000/3500/4000；VI 4500/5100/5700；VII 6300/7000/7700；
+      // VIII 8400/9200/10000；IX 10800/11700/12600。
+      const bronze=150*lv*(lv-1);
       const step=lv*100;
       return {bronze,silver:bronze+step,gold:bronze+step*2};
     }
@@ -23272,16 +23275,29 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       }else if(Number(p.leaguePoints||0)===topPoints){
         base=Number(LEAGUE_WIN_POINTS[n]||0);
       }
-      const actual=base*level;
-      rec.leaguePoints=Number(before.leaguePoints||0)+actual;
+      const coreActual=base*level;
+      rec.leaguePoints=Number(before.leaguePoints||0)+coreActual;
+      let promotionTopUp=0;
+      // v183：關主三連勝升級後，若累計 EXP 尚未達下一級銅門檻，自動補足差額。
+      // 每局勝利的 10 × 等級 EXP 仍照常取得；補足值是晉級獎勵，不取代勝局 EXP。
+      if(game.settings?.promotionBattle && !p.isAI && game.promotionResult?.won){
+        const nextLevel=Math.max(1,Math.min(PLAYER_RANK_MAX,Number(game.promotionResult.afterLevel||careerPlayerLevel(rec))));
+        const nextBronze=careerTierThresholds(nextLevel).bronze;
+        const currentTotal=Math.max(0,Number(rec.leaguePoints||0))+Math.max(0,Number(rec.tournamentTP||0));
+        promotionTopUp=Math.max(0,nextBronze-currentTotal);
+        if(promotionTopUp>0) rec.leaguePoints=Number(rec.leaguePoints||0)+promotionTopUp;
+      }
+      const actual=coreActual+promotionTopUp;
       if(rec.type!=='ai') careerSyncUnlockRecord(rec);
-      game._lastExpAwards[p.id]={base,multiplier:level,actual};
+      game._lastExpAwards[p.id]={base,multiplier:level,coreActual,promotionTopUp,actual};
     });
     if(game.settings?.promotionBattle&&game.promotionResult){
       const hp=(finalRanked||[]).find(p=>!p.isAI),award=hp?game._lastExpAwards[hp.id]:null;
       game.promotionResult.reward=Number(award?.actual||0);
       game.promotionResult.baseReward=Number(award?.base||0);
       game.promotionResult.multiplier=Number(award?.multiplier||1);
+      game.promotionResult.coreReward=Number(award?.coreActual||0);
+      game.promotionResult.promotionTopUp=Number(award?.promotionTopUp||0);
     }
     rankingWriteStore(store);
     const afterHuman=rankingNormalizeRecord(rankingReadStore()[humanKey],{name:localPlayerName(),type:'human',rating:1000});
@@ -23401,7 +23417,15 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     const rankText=career.rank?.rank?`#${career.rank.rank} / ${career.rank.total}`:'—';
     const levelUp=after.level>before.level;
     const tierChanged=before.level!==after.level||before.rings!==after.rings;
-    const formula=award.base>0?`${award.base} EXP × ${romanLevel(award.multiplier)} = <b>${award.actual} EXP</b>`:`0 EXP × ${romanLevel(award.multiplier)} = <b>0 EXP</b>`;
+    const coreActual=Number(award.coreActual ?? (Number(award.base||0)*Number(award.multiplier||1)));
+    const promotionTopUp=Math.max(0,Number(award.promotionTopUp||0));
+    let formula=award.base>0?`${award.base} EXP × ${romanLevel(award.multiplier)} = ${coreActual} EXP`:`0 EXP × ${romanLevel(award.multiplier)} = 0 EXP`;
+    if(promotionTopUp>0){
+      const topUpLabel=lang==='en'?'Promotion top-up':lang==='ja'?'昇格補填':'晉級補足';
+      formula+=` + ${topUpLabel} ${promotionTopUp} EXP = <b>${award.actual} EXP</b>`;
+    }else{
+      formula=formula.replace(/ = ([^=]+)$/,' = <b>$1</b>');
+    }
     els.modalBody.innerHTML=`<div class="result-center">
       <div class="result-hero"><h3>${resultOutcome(snap)}</h3>${tableHtml(snap)}</div>
       ${humanRow&&snap.type!=='tournament'?((snap.type==='league'||snap.type==='promotion')?`<div><b>${t.myStats}</b><div class="result-stat-grid"><div class="result-stat"><span>${t.lastVP}</span><b>${humanRow.lastVP}</b></div><div class="result-stat"><span>${t.maxN2}</span><b>${formatNumber(humanRow.lastMaxN2)}</b></div><div class="result-stat"><span>${t.matchPt}</span><b>${humanRow.lastPt??0}</b></div><div class="result-stat"><span>${t.totalPt}</span><b>${humanRow.seriesPt??0}</b></div></div></div>`:`<div><b>${t.myStats}</b><div class="result-stat-grid"><div class="result-stat"><span>${t.lastVP}</span><b>${humanRow.lastVP}</b></div><div class="result-stat"><span>${t.totalVP}</span><b>${humanRow.totalVP}</b></div><div class="result-stat"><span>${t.maxN2}</span><b>${formatNumber(humanRow.lastMaxN2)}</b></div><div class="result-stat"><span>${t.totalMaxN2}</span><b>${formatNumber(humanRow.totalMaxN2)}</b></div><div class="result-stat"><span>${t.rounds}</span><b>${humanRow.lastRounds}</b></div><div class="result-stat"><span>${t.totalRounds}</span><b>${humanRow.totalRounds}</b></div>${humanRow.seriesPt!=null?`<div class="result-stat"><span>${t.seriesPt}</span><b>${humanRow.seriesPt}</b></div>`:''}</div></div>`):''}
