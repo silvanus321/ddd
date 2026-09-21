@@ -23935,4 +23935,277 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 @media(max-width:620px){.leaderboard-table td:nth-child(3){font-size:.66rem!important;max-width:145px}}
 </style>
 
+
+<!-- v184: background lifecycle pause + iOS audio unlock; no rules/AI/EXP changes -->
+<script id="ddd-v184-background-audio">
+(() => {
+  "use strict";
+
+  const V184 = "v184";
+  const v184State = {
+    backgrounded: Boolean(document.hidden),
+    interruptedAudio: false,
+    audioWasPlaying: new Map()
+  };
+  window.__dddBackgrounded = v184State.backgrounded;
+
+  function v184UniqueAudios() {
+    const set = new Set();
+    try {
+      if (allModeRecordedMusic && typeof allModeRecordedMusic === "object") {
+        Object.values(allModeRecordedMusic).forEach(a => { if (a instanceof HTMLMediaElement) set.add(a); });
+      }
+    } catch (_) {}
+    try {
+      if (tournamentRecordedMusic && typeof tournamentRecordedMusic === "object") {
+        Object.values(tournamentRecordedMusic).forEach(a => { if (a instanceof HTMLMediaElement) set.add(a); });
+      }
+    } catch (_) {}
+    try { document.querySelectorAll("audio").forEach(a => set.add(a)); } catch (_) {}
+    return [...set];
+  }
+
+  function v184PauseRecordedAudio() {
+    v184State.audioWasPlaying.clear();
+    v184UniqueAudios().forEach(audio => {
+      const wasPlaying = !audio.paused && !audio.ended;
+      v184State.audioWasPlaying.set(audio, wasPlaying);
+      try {
+        if (audio._dddFadeFrame) {
+          cancelAnimationFrame(audio._dddFadeFrame);
+          audio._dddFadeFrame = null;
+        }
+        audio.pause();
+      } catch (_) {}
+    });
+  }
+
+  function v184ResumeRecordedAudio() {
+    if (!musicEnabled || game.gameOver) {
+      v184State.audioWasPlaying.clear();
+      return;
+    }
+    v184State.audioWasPlaying.forEach((wasPlaying, audio) => {
+      if (!wasPlaying) return;
+      try { Promise.resolve(audio.play()).catch(() => {}); } catch (_) {}
+    });
+    v184State.audioWasPlaying.clear();
+  }
+
+  function v184WatchAudioContext(ctx) {
+    if (!ctx || ctx.__dddV184StateWatched) return ctx;
+    try {
+      Object.defineProperty(ctx, "__dddV184StateWatched", {value:true, configurable:true});
+    } catch (_) { ctx.__dddV184StateWatched = true; }
+    const onState = () => {
+      if (ctx.state === "interrupted") v184State.interruptedAudio = true;
+      if (!v184State.backgrounded && !document.hidden && v184State.interruptedAudio && soundEnabled) {
+        if (ctx.state === "suspended" || ctx.state === "interrupted") {
+          Promise.resolve(ctx.resume()).then(() => { v184State.interruptedAudio = false; }).catch(() => {});
+        } else if (ctx.state === "running") {
+          v184State.interruptedAudio = false;
+        }
+      }
+    };
+    try { ctx.addEventListener("statechange", onState); }
+    catch (_) {
+      const previous = ctx.onstatechange;
+      ctx.onstatechange = event => { try { previous?.call(ctx, event); } catch (_) {} onState(); };
+    }
+    return ctx;
+  }
+
+  // Preserve the existing sound preference behavior while attaching iOS interruption recovery.
+  const v184PreviousGetAudioContext = getAudioContext;
+  getAudioContext = function(...args) {
+    const ctx = v184PreviousGetAudioContext(...args);
+    return v184WatchAudioContext(ctx);
+  };
+
+  function v184EnterBackground() {
+    if (v184State.backgrounded) return;
+    v184State.backgrounded = true;
+    window.__dddBackgrounded = true;
+
+    v184PauseRecordedAudio();
+    try {
+      if (audioContext && audioContext.state === "running") {
+        Promise.resolve(audioContext.suspend()).catch(() => {});
+      }
+    } catch (_) {}
+    try { stopHeartbeatLayer(); } catch (_) {}
+    try { stopChampionshipBeat(); } catch (_) {}
+    try { navigator.vibrate?.(0); } catch (_) {}
+
+    try { document.dispatchEvent(new Event("ddd-v184-background")); } catch (_) {}
+  }
+
+  function v184LeaveBackground() {
+    if (!v184State.backgrounded && !document.hidden) return;
+    v184State.backgrounded = false;
+    window.__dddBackgrounded = false;
+
+    try {
+      if (audioContext) {
+        v184WatchAudioContext(audioContext);
+        if (soundEnabled && (audioContext.state === "suspended" || audioContext.state === "interrupted")) {
+          Promise.resolve(audioContext.resume()).then(() => { v184State.interruptedAudio = false; }).catch(() => {});
+        }
+      }
+    } catch (_) {}
+
+    v184ResumeRecordedAudio();
+    try { updateDynamicAudioState(); } catch (_) {}
+    try { document.dispatchEvent(new Event("ddd-v184-foreground")); } catch (_) {}
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) v184EnterBackground();
+    else v184LeaveBackground();
+  }, {passive:true});
+  window.addEventListener("pagehide", v184EnterBackground, {passive:true});
+  window.addEventListener("pageshow", () => { if (!document.hidden) v184LeaveBackground(); }, {passive:true});
+
+  // Prevent any late render/audio update from restarting music after the page has gone hidden.
+  const v184PreviousDynamicAudioUpdate = updateDynamicAudioState;
+  updateDynamicAudioState = function(...args) {
+    if (v184State.backgrounded || document.hidden) return;
+    return v184PreviousDynamicAudioUpdate(...args);
+  };
+
+  // Cancel haptics while hidden even if an animation callback completes after backgrounding.
+  const v184PreviousVibrateGame = vibrateGame;
+  vibrateGame = function(...args) {
+    if (v184State.backgrounded || document.hidden) return;
+    return v184PreviousVibrateGame(...args);
+  };
+
+  // Delay counts only foreground time. Fast simulation remains immediate; spectator speed is preserved.
+  function v184ForegroundDelay(ms) {
+    let remaining = Math.max(0, Number(ms) || 0);
+    return new Promise(resolve => {
+      let timer = null;
+      let startedAt = 0;
+      let done = false;
+
+      const cleanup = () => {
+        if (timer !== null) clearTimeout(timer);
+        timer = null;
+        document.removeEventListener("visibilitychange", onVisibility);
+        document.removeEventListener("ddd-v184-background", onBackground);
+        document.removeEventListener("ddd-v184-foreground", onForeground);
+        window.removeEventListener("pagehide", onBackground);
+        window.removeEventListener("pageshow", onForeground);
+      };
+      const finish = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve();
+      };
+      const pause = () => {
+        if (timer === null) return;
+        clearTimeout(timer);
+        timer = null;
+        const elapsed = Math.max(0, performance.now() - startedAt);
+        remaining = Math.max(0, remaining - elapsed);
+      };
+      const arm = () => {
+        if (done || timer !== null || v184State.backgrounded || document.hidden) return;
+        if (remaining <= 0) { finish(); return; }
+        startedAt = performance.now();
+        timer = setTimeout(finish, remaining);
+      };
+      const onVisibility = () => { if (document.hidden) pause(); else arm(); };
+      const onBackground = () => pause();
+      const onForeground = () => arm();
+
+      document.addEventListener("visibilitychange", onVisibility, {passive:true});
+      document.addEventListener("ddd-v184-background", onBackground, {passive:true});
+      document.addEventListener("ddd-v184-foreground", onForeground, {passive:true});
+      window.addEventListener("pagehide", onBackground, {passive:true});
+      window.addEventListener("pageshow", onForeground, {passive:true});
+      arm();
+    });
+  }
+
+  sleep = function(ms) {
+    if (game.fastMode || game.simulationMode) return Promise.resolve();
+    let duration = Math.max(0, Number(ms) || 0);
+    if (game.spectatorMode) {
+      const speed = [1,2,4].includes(Number(game.spectatorSpeed)) ? Number(game.spectatorSpeed) : 1;
+      duration = Math.max(0, Math.round(duration / speed));
+    }
+    return v184ForegroundDelay(duration);
+  };
+
+  // One real user gesture unlocks WebAudio and warms the six external music tracks for iOS Safari.
+  let v184UnlockDone = false;
+  const v184UnlockEvents = ["pointerdown", "touchend", "keydown", "click"];
+  function v184RemoveUnlockListeners() {
+    document.removeEventListener("pointerdown", v184UnlockAudioOnce, true);
+    document.removeEventListener("touchend", v184UnlockAudioOnce, true);
+    document.removeEventListener("keydown", v184UnlockAudioOnce, true);
+    document.removeEventListener("click", v184UnlockAudioOnce, false);
+  }
+  function v184UnlockAudioOnce() {
+    if (v184UnlockDone) return;
+
+    let contextReady = !soundEnabled;
+    let musicReady = !musicEnabled;
+    try {
+      const ctx = getAudioContext();
+      if (ctx) {
+        contextReady = true;
+        if (ctx.state === "suspended" || ctx.state === "interrupted") {
+          Promise.resolve(ctx.resume()).catch(() => {});
+        }
+      }
+    } catch (_) {}
+
+    if (musicEnabled) {
+      try {
+        const tracks = recordedMusicTracks();
+        recordedMusicUnlocked = true;
+        musicReady = true;
+        tracks.forEach(audio => {
+          const priorVolume = Number(audio.volume) || 0;
+          try {
+            audio.volume = 0;
+            const warm = audio.play();
+            Promise.resolve(warm).then(() => {
+              try {
+                audio.pause();
+                audio.currentTime = 0;
+                audio.volume = priorVolume;
+              } catch (_) {}
+            }).catch(() => { try { audio.volume = priorVolume; } catch (_) {} });
+          } catch (_) { try { audio.volume = priorVolume; } catch (_) {} }
+        });
+        setTimeout(() => { if (!document.hidden) { try { updateDynamicAudioState(); } catch (_) {} } }, 0);
+      } catch (_) {}
+    }
+
+    // If music is currently disabled, retain the listeners: the later "turn music on" click
+    // itself can then serve as the required user activation on iOS.
+    if (contextReady && musicReady) {
+      v184UnlockDone = true;
+      v184RemoveUnlockListeners();
+    }
+  }
+  document.addEventListener("pointerdown", v184UnlockAudioOnce, {capture:true, passive:true});
+  document.addEventListener("touchend", v184UnlockAudioOnce, {capture:true, passive:true});
+  document.addEventListener("keydown", v184UnlockAudioOnce, {capture:true});
+  document.addEventListener("click", v184UnlockAudioOnce, {capture:false, passive:true});
+
+  // Handle a page that is already hidden when this script is evaluated.
+  if (document.hidden) {
+    v184State.backgrounded = false;
+    v184EnterBackground();
+  }
+
+  console.info(`[DDD ${V184}] background lifecycle + iOS audio unlock active`);
+})();
+</script>
+
 </body></html>
