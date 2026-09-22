@@ -27,6 +27,7 @@
 <!DOCTYPE html>
 <!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja --><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head>
+  <!-- v185: six-round tutorial labels + wrong-input guards; round 4 must take public Y4 -->
   <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
 <!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
@@ -8974,7 +8975,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         return slots>0 ? `${base}｜${hint.decompSlots(slots)}` : hint.decompFull(currentDecompCardLimit());
       }
       if(action==="dive") {
-        if(!(human?.hand?.length)) return isCoopMode() ? hint.coopEmptyDive : hint.emptyDive;
+        if(!(human?.hand?.length)) {
+          if(game.sixRoundTutorial?.active && Number(game.round)===4) return "空手下潛：請直接點公共區 Y4；本輪不能點手牌區抽牌。";
+          return isCoopMode() ? hint.coopEmptyDive : hint.emptyDive;
+        }
         return ui?.actionHelp?.dive || ACTION_TOOLTIPS.dive;
       }
       if(action==="explore") {
@@ -9074,7 +9078,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if(action==="wire") return isActionSelectionReady(action) ? p.wireReady : p.wireNeed;
       if(action==="decomp") return isActionSelectionReady(action) ? p.decompReady : p.decompNeed;
       if(action==="dive") {
-        if(!(humanPlayer()?.hand?.length)) return isCoopMode()?ui.coopEmptyDive:ui.emptyDive;
+        if(!(humanPlayer()?.hand?.length)) {
+          if(game.sixRoundTutorial?.active && Number(game.round)===4) return "請從公共區拿 Y4；本輪不能從手牌區抽牌。";
+          return isCoopMode()?ui.coopEmptyDive:ui.emptyDive;
+        }
         const code=hand[0]?.color;
         return hand.length ? p.diveColor(ui.color[code]||code||"") : p.diveNeed;
       }
@@ -9297,12 +9304,13 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const selectionLockedForExplore = Boolean(isHumanTurn && game.pendingHumanExplore && !(isTutorialMode() && TutorialManager.active));
       const handZoneName = player.isAI ? `${player.id}Hand` : "humanHand";
       const decompZoneName = player.isAI ? `${player.id}Decomp` : "humanDecomp";
+      const sixRound4PublicOnly=Boolean(game.sixRoundTutorial?.active && Number(game.round)===4 && !player.isAI);
       renderRow(view.handCards, player.hand, {
         zone: handZoneName,
         selectable: isHumanTurn && !selectionLockedForExplore,
-        emptyText: player.isAI ? `${player.name}空手` : (isCoopMode() ? "目前空手，任務模式必須下潛抽1張牌" : "目前空手，可下潛抽牌或拿公共區牌")
+        emptyText: player.isAI ? `${player.name}空手` : (sixRound4PublicOnly ? "目前空手｜本輪請下潛後拿公共區 Y4" : (isCoopMode() ? "目前空手，任務模式必須下潛抽1張牌" : "目前空手，可下潛抽牌或拿公共區牌"))
       });
-      const emptyDiveDeckChoice=Boolean(isHumanTurn && !player.isAI && activeHumanAction()==="dive" && !player.hand.length);
+      const emptyDiveDeckChoice=Boolean(isHumanTurn && !player.isAI && activeHumanAction()==="dive" && !player.hand.length && !sixRound4PublicOnly);
       view.handZone.classList.toggle("empty-dive-deck-choice", emptyDiveDeckChoice);
       if(emptyDiveDeckChoice) {
         const empty=view.handCards.querySelector(".empty-zone");
@@ -9609,7 +9617,9 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const human = humanPlayer();
       if (game.gameOver || game.busy || currentPlayer()?.id !== human?.id) return;
       if(game.sixRoundTutorial?.active && !SixRoundTutorial.allowSelection(zone,card)){
-        SixRoundTutorial.flashHint("這一步請只選教學提示指定的牌。"); return;
+        SixRoundTutorial.flashHint("按錯了哦！這一步請只選黃色高亮的指定牌。");
+        setStatus("按錯了哦！請依照教學提示選牌。","error");
+        return;
       }
       if (isTutorialMode() && TutorialManager.active && !TutorialManager.allowSelection(zone, card)) {
         TutorialManager.showHint("先依照黃色高亮提示選牌。"); return;
@@ -11023,6 +11033,20 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if(invalid) { setStatus(invalid,"error"); return; }
       const human=humanPlayer();
       if(!human || human.hand.length || activeHumanAction()!=="dive" || game.busy) return;
+      if(game.sixRoundTutorial?.active && Number(game.round)===4){
+        const choiceText=String(choice||"");
+        if(choiceText==="deck") {
+          const msg="按錯了哦！第4輪空手下潛要從公共區拿 Y4，不能點手牌區抽牌。";
+          SixRoundTutorial.flashHint(msg); setStatus(msg,"error"); render(); return;
+        }
+        if(choiceText.startsWith("public:")){
+          const target=game.public.find(c=>c.id===Number(choiceText.split(":")[1]));
+          if(!target || cardKey(target)!=="Y4") {
+            const msg="按錯了哦！第4輪請拿公共區的 Y4。";
+            SixRoundTutorial.flashHint(msg); setStatus(msg,"error"); render(); return;
+          }
+        }
+      }
       if(String(choice).startsWith("public:") && isCoopMode()) return;
       game.busy=true; render();
       beginActionAudit(human, actionName("dive"));
@@ -21588,7 +21612,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const coach=this.ensureCoach();
         const kicker=coach.querySelector("#sixTutorialKicker"), t=coach.querySelector("#sixTutorialTitle"), body=coach.querySelector("#sixTutorialText"), h=coach.querySelector("#sixTutorialHint"), controls=coach.querySelector("#sixTutorialControls"), next=coach.querySelector("#sixTutorialNextBtn");
         if(kicker) kicker.textContent=`介面介紹 ${index+1}／${steps.length}`;
-        if(t) t.textContent=step.title;
+        const introTitles=["記錄區","分數指示物","氮值指示物","公共區","手牌區","減壓區"];
+        if(t) t.textContent=introTitles[index] || step.title;
         if(body) body.textContent=step.text;
         if(h) h.textContent=index===steps.length-1?"看完後按「開始第1輪」。":"看完這個區域後按「下一步」。";
         if(controls) controls.hidden=false;
@@ -21638,24 +21663,24 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       instructionForHuman(){
         const r=Number(game.round)||1;
         const pending=Boolean(game.pendingHumanExplore);
-        if(r===1) return {title:"你的回合｜下潛",text:"湧流事件後你只剩 Y5。選擇 Y5，再按「下潛」，抽1張 Y3。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y5']",".action-btn[data-action='dive']"]};
-        if(r===2) return {title:"你的回合｜同色下潛",text:"你有 Y3、Y5 兩張黃色牌。選取兩張黃色牌後按「下潛」，會抽2張 P2。",selectors:["#playerRows .row-zone.is-human .hand-zone",".action-btn[data-action='dive']"]};
-        if(r===3 && pending) return {title:"探勘第2步｜拿公共牌",text:"從公共區拿 P3、Y1。選滿2張後會自動拿回，再由第一張棄牌 Y5 觸發神秘氣室。",selectors:["#publicZone .card[data-card-key='P3']","#publicZone .card[data-card-key='Y1']"]};
-        if(r===3) return {title:"你的回合｜探勘",text:"依順序先選 Y5、再選 Y3，按「探勘」。第一張棄牌 Y5 會成為事件牌。",hint:"注意：事件只看第1張棄牌，所以 Y5 必須先選。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y5']","#playerRows .row-zone.is-human .card[data-card-key='Y3']",".action-btn[data-action='explore']"]};
-        if(r===4) return {title:"你的回合｜空手下潛",text:"你現在沒有手牌。按「下潛」，再直接從公共區拿 Y4；公共區會自動補入 P5。",selectors:[".action-btn[data-action='dive']","#publicZone .card[data-card-key='Y4']"]};
-        if(r===5) return {title:"你的回合｜下潛成牌",text:"選 Y4，按「下潛」，固定抽到 Y3，準備下一輪上浮。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y4']",".action-btn[data-action='dive']"]};
-        if(r===6) return {title:"你的回合｜上浮",text:"選 Y3、Y4 兩張同色連號，按「上浮」得4VP。手牌上浮會讓氮上限－3。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y3']","#playerRows .row-zone.is-human .card[data-card-key='Y4']",".action-btn[data-action='surface']"]};
+        if(r===1) return {title:"下潛",text:"湧流事件後你只剩 Y5。選擇 Y5，再按「下潛」，抽1張 Y3。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y5']",".action-btn[data-action='dive']"]};
+        if(r===2) return {title:"下潛",text:"你有 Y3、Y5 兩張黃色牌。選取兩張黃色牌後按「下潛」，會抽2張 P2。",selectors:["#playerRows .row-zone.is-human .hand-zone",".action-btn[data-action='dive']"]};
+        if(r===3 && pending) return {title:"探勘",text:"從公共區拿 P3、Y1。選滿2張後會自動拿回，再由第一張棄牌 Y5 觸發神秘氣室。",selectors:["#publicZone .card[data-card-key='P3']","#publicZone .card[data-card-key='Y1']"]};
+        if(r===3) return {title:"探勘",text:"依順序先選 Y5、再選 Y3，按「探勘」。第一張棄牌 Y5 會成為事件牌。",hint:"注意：事件只看第1張棄牌，所以 Y5 必須先選。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y5']","#playerRows .row-zone.is-human .card[data-card-key='Y3']",".action-btn[data-action='explore']"]};
+        if(r===4) return {title:"空手下潛",text:"你現在沒有手牌。按「下潛」，再直接從公共區拿 Y4；公共區會自動補入 P5。本輪手牌區抽牌已鎖定，請不要從牌庫抽牌。",hint:"第4輪只能拿公共區 Y4；若點錯位置，教學會提示你重新操作。",selectors:[".action-btn[data-action='dive']","#publicZone .card[data-card-key='Y4']"]};
+        if(r===5) return {title:"下潛",text:"選 Y4，按「下潛」，固定抽到 Y3，準備下一輪上浮。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y4']",".action-btn[data-action='dive']"]};
+        if(r===6) return {title:"上浮",text:"選 Y3、Y4 兩張同色連號，按「上浮」得4VP。手牌上浮會讓氮上限－3。",selectors:["#playerRows .row-zone.is-human .card[data-card-key='Y3']","#playerRows .row-zone.is-human .card[data-card-key='Y4']",".action-btn[data-action='surface']"]};
         return {title:"教學局",text:"依提示完成目前步驟。",selectors:[]};
       },
       instructionForAI(){
         const r=Number(game.round)||1;
         const map={
-          1:["玩家A示範｜探勘＋事件","玩家A會棄 Y2、P0，拿 P4、P3。第一張 Y2 觸發湧流，讓你棄掉 Y4；事件完成後公共區才補到3張。"],
-          2:["玩家A示範｜下潛","玩家A有2張紫色牌，因此下潛抽2張：Y3、Y2。"],
-          3:["玩家A示範｜減壓","玩家A把不同顏色的 P4、Y3 放入減壓區，降低目前氮值。"],
-          4:["玩家A示範｜再次減壓","玩家A再把 P3、Y2 放入減壓區，並把減壓牌整理成後續可上浮的連號。"],
-          5:["玩家A示範｜減壓區上浮","玩家A從減壓區上浮 P3、P4，得到4VP；從減壓區上浮不降低氮上限。"],
-          6:["玩家A示範｜再次上浮","玩家A從減壓區上浮 Y2、Y3，得到3VP，總分7VP。接著輪到你完成最後一次手牌上浮。"]
+          1:["下潛","玩家A先示範探勘＋事件：棄 Y2、P0，拿 P4、P3。第一張 Y2 觸發湧流，讓你棄掉 Y4；接著輪到你完成本輪的下潛。"],
+          2:["下潛","玩家A先示範下潛：有2張紫色牌，因此抽2張 Y3、Y2；接著輪到你完成本輪的下潛。"],
+          3:["探勘","玩家A先示範減壓：把不同顏色的 P4、Y3 放入減壓區，降低目前氮值；接著輪到你完成本輪的探勘。"],
+          4:["空手下潛","玩家A先再次減壓：把 P3、Y2 放入減壓區。接著你要做空手下潛，而且只能從公共區拿 Y4。"],
+          5:["下潛","玩家A先從減壓區上浮 P3、P4，得到4VP；接著輪到你完成本輪的下潛。"],
+          6:["上浮","玩家A先從減壓區上浮 Y2、Y3，得到3VP、總分7VP；接著輪到你完成最後一次手牌上浮。"]
         };
         const [title,text]=map[r]||["玩家A示範","請觀看這一步。"];
         return {title,text,selectors:["#playerRows .row-zone:not(.is-human)","#publicZone"]};
@@ -21715,7 +21740,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       validateHumanAction(action){
         if(!this.active()) return "";
         const expected=this.expectedAction();
-        if(String(action)!==expected) return `這一步請執行「${actionName(expected)}」。`;
+        if(String(action)!==expected) return `按錯了哦！這一步請執行「${actionName(expected)}」。`;
         const r=Number(game.round)||1;
         if(r===4 && action==="dive" && !humanPlayer()?.hand?.length) return "";
         if(r===3 && game.pendingHumanExplore){
@@ -21876,6 +21901,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if(!handZone || event.target.closest(".card")) return;
       const human=humanPlayer();
       if(!human || human.hand.length || activeHumanAction()!=="dive" || game.busy || game.gameOver) return;
+      if(game.sixRoundTutorial?.active && Number(game.round)===4){
+        const msg="按錯了哦！第4輪請直接拿公共區 Y4，手牌區抽牌已鎖定。";
+        SixRoundTutorial.flashHint(msg); setStatus(msg,"error"); return;
+      }
       void executeHumanEmptyDiveChoice("deck");
     });
     document.getElementById("tutorialNextBtn")?.addEventListener("click",()=>TutorialManager.next());
