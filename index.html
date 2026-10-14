@@ -27,6 +27,7 @@
 <!DOCTYPE html>
 <!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja --><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
 <html lang="zh-Hant"><head>
+  <!-- v186: AI baseline EXP = ladder level × 1000; preserved separately from earned league/tournament EXP -->
   <!-- v185: six-round tutorial labels + wrong-input guards; round 4 must take public Y4 -->
   <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
@@ -6832,11 +6833,19 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     const PLAYER_RANK_MAX = 9;
     const PLAYER_RANK_RINGS = Object.freeze(["","銅","銀","金"]);
     const ROMAN_LEVELS = Object.freeze(["I","II","III","IV","V","VI","VII","VIII","IX"]);
+    // v186：每名 AI 固有基礎 EXP＝其 I～IX 階級 × 1000。
+    // 這是一次性的排名基準，不屬於一般賽或錦標賽實戰 EXP，也不會每次出場重複累加。
+    function aiBaseExpForCode(code){
+      const tier=aiLadderMeta(Number(code))?.tier;
+      const idx=ROMAN_LEVELS.indexOf(tier);
+      return (idx>=0?idx+1:1)*1000;
+    }
     function careerPlayerLevel(rec=careerCurrentProfile()){
       return Math.max(1,Math.min(PLAYER_RANK_MAX,Math.floor(Number(rec?.playerRankLevel||1))));
     }
     function careerTotalPoints(rec=careerCurrentProfile()){
-      return Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
+      const aiBase=rec?.type==="ai"?Math.max(aiBaseExpForCode(rec?.aiCode),Number(rec?.aiBaseExp||0)):0;
+      return aiBase+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
     }
     function careerTierThresholds(level){
       const lv=Math.max(1,Math.min(PLAYER_RANK_MAX,Math.floor(Number(level)||1)));
@@ -7014,6 +7023,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     function rankingBlankRecord({name="玩家",type="human",aiCode=null,rating=1000,tier="",stars=0,aiRank=null}={}){
       return {
         name:rankingSafeName(name),type,aiCode,rating:Number(rating)||1000,tier,stars,aiRank,
+        aiBaseExp:type==="ai"?aiBaseExpForCode(aiCode):0,
         leaguePoints:0,leagueSeries:0,leagueWins:0,
         leagueSeriesBySize:{2:0,3:0,4:0,5:0},leagueWinsBySize:{2:0,3:0,4:0,5:0},
         tournamentTP:0,tournaments:0,tournamentsBySize:{4:0,8:0,12:0,16:0,18:0,24:0,32:0},
@@ -7043,6 +7053,12 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         out.tournamentPodiums[n]={champion:Number(pod.champion||0),runnerUp:Number(pod.runnerUp||0),third:Number(pod.third||0)};
       });
       out.leagueWins=Number(out.leagueWins||0);
+      if(out.type==="ai"){
+        // v186：舊存檔沒有 aiBaseExp 時，在正規化時自動補一次；之後只保留，不會重複累加。
+        out.aiBaseExp=Math.max(aiBaseExpForCode(out.aiCode),Math.max(0,Number(out.aiBaseExp||0)));
+      }else{
+        out.aiBaseExp=0;
+      }
       if(out.type!=="ai"){
         out.playerRankLevel=Math.max(1,Math.min(PLAYER_RANK_MAX,Math.floor(Number(out.playerRankLevel||1))));
         out.rankStartTotalPoints=Math.max(0,Number(out.rankStartTotalPoints||0));
@@ -23092,8 +23108,8 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       allAI:'全部 AI 已解鎖', allTournament:'全部錦標賽已解鎖', maxLevel:'已達最高等級', needExp:'尚需 {n} EXP', ready:'已可挑戰',
       unlockPromotion:'解鎖升級戰', unlockAI:'解鎖 {tier} 級 AI：{names}', unlockTournament:'解鎖 {size}強錦標賽',
       winner:'冠軍', runnerUp:'亞軍', third:'季軍', shared:'共享勝利', noExp:'本次沒有取得 EXP', bracketTitle:'錦標賽晉級樹', bracketUpdated:'本場比賽結束，最新戰況更新：', bracketCurrent:'目前錦標賽整體戰況：', prelim:'初賽', groupStage:'分組', quarter:'8強', semi:'四強', finals:'決賽', bronzeMatch:'季軍戰', finalMatch:'冠軍戰', resultCol:'結果', advance1:'第1名晉級', advance2:'前2名晉級', notPlayed:'尚未進行', qualifiedFinal:'晉級冠軍戰', toBronze:'進入季軍戰', fourth:'第4名', nextMatch:'進入下一場', backGame:'返回遊戲', backTable:'返回觀看桌面', seedNote:'依上一階段成績排序；下一場順位依賽制規則調整。',
-      globalPlayers:'全球玩家', localAI:'我與 AI', refresh:'重新整理', rename:'修改玩家名稱', close:'返回', rating:'Rating', sourceLeague:'一般賽 EXP', sourceTournament:'錦標 EXP',
-      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 27 個 AI 使用同一套 EXP 規則；AI 實得 EXP 也會乘自己的 I～IX 級數。',
+      globalPlayers:'全球玩家', localAI:'我與 AI', refresh:'重新整理', rename:'修改玩家名稱', close:'返回', rating:'Rating', aiBaseExp:'AI 基礎 EXP', sourceLeague:'一般賽 EXP', sourceTournament:'錦標 EXP',
+      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 27 個 AI 依累計 EXP 排名；每名 AI 另有一次性基礎 EXP＝自身 I～IX 級數 × 1000，實戰 EXP 仍照原規則累積。',
       detailTitle:'排行榜詳細資料', backLeaderboard:'返回排行榜', aiTier:'AI階級', playerLevel:'玩家等級', tournamentGames:'錦標總場次', medals:'冠／亞／季軍', medalRate:'錦標奪牌率', leagueRate:'積分賽勝率', leagueSeries:'積分賽系列數',
       loading:'讀取中…', cloudFail:'全球排行榜目前無法連線。', noRows:'尚無排行榜紀錄。'
     },
@@ -23107,8 +23123,8 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       allAI:'All AI unlocked', allTournament:'All tournaments unlocked', maxLevel:'Maximum level reached', needExp:'{n} EXP needed', ready:'Ready to challenge',
       unlockPromotion:'Promotion challenge unlocked', unlockAI:'Unlocked Level {tier} AI: {names}', unlockTournament:'Unlocked {size}-player tournament',
       winner:'Champion', runnerUp:'Runner-up', third:'Third', shared:'Shared victory', noExp:'No EXP earned this time', bracketTitle:'Tournament Bracket', bracketUpdated:'This match is complete. Updated bracket:', bracketCurrent:'Current tournament bracket:', prelim:'Preliminary', groupStage:'Group Stage', quarter:'Quarterfinals', semi:'Semifinals', finals:'Finals', bronzeMatch:'Third-place Match', finalMatch:'Championship', resultCol:'Result', advance1:'Top 1 advances', advance2:'Top 2 advance', notPlayed:'Not played', qualifiedFinal:'Advances to final', toBronze:'To third-place match', fourth:'4th', nextMatch:'Next Match', backGame:'Back to Game', backTable:'Back to Table', seedNote:'Ranked by the previous stage; seating for the next game follows the tournament rules.',
-      globalPlayers:'Global Players', localAI:'Me & AI', refresh:'Refresh', rename:'Rename Player', close:'Back', rating:'Rating', sourceLeague:'League EXP', sourceTournament:'Tournament EXP',
-      leaderboardTitle:'🏆 Leaderboard', leaderboardGlobalHelp:'Global leaderboard lists human players and sorts by total EXP.', leaderboardLocalHelp:'You and all 27 AI use the same EXP rules. AI EXP is also multiplied by its I–IX level.',
+      globalPlayers:'Global Players', localAI:'Me & AI', refresh:'Refresh', rename:'Rename Player', close:'Back', rating:'Rating', aiBaseExp:'AI Base EXP', sourceLeague:'League EXP', sourceTournament:'Tournament EXP',
+      leaderboardTitle:'🏆 Leaderboard', leaderboardGlobalHelp:'Global leaderboard lists human players and sorts by total EXP.', leaderboardLocalHelp:'You and all 27 AI are ranked by total EXP. Each AI also receives a one-time base EXP equal to its I–IX level × 1000; earned EXP still follows the normal rules.',
       detailTitle:'Leaderboard Details', backLeaderboard:'Back to Leaderboard', aiTier:'AI Tier', playerLevel:'Player Level', tournamentGames:'Tournaments', medals:'1st / 2nd / 3rd', medalRate:'Podium Rate', leagueRate:'League Win Rate', leagueSeries:'League Series',
       loading:'Loading…', cloudFail:'Global leaderboard is currently unavailable.', noRows:'No leaderboard records yet.'
     },
@@ -23122,8 +23138,8 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       allAI:'全AI解放済み', allTournament:'全トーナメント解放済み', maxLevel:'最高レベル到達', needExp:'あと {n} EXP', ready:'挑戦可能',
       unlockPromotion:'昇格戦を解放', unlockAI:'{tier}級AIを解放：{names}', unlockTournament:'{size}強トーナメントを解放',
       winner:'優勝', runnerUp:'準優勝', third:'3位', shared:'同率優勝', noExp:'今回はEXP獲得なし', bracketTitle:'トーナメント表', bracketUpdated:'この試合が終了しました。最新状況：', bracketCurrent:'現在のトーナメント状況：', prelim:'予選', groupStage:'グループ戦', quarter:'ベスト8', semi:'準決勝', finals:'決勝', bronzeMatch:'3位決定戦', finalMatch:'優勝決定戦', resultCol:'結果', advance1:'1位通過', advance2:'上位2名通過', notPlayed:'未実施', qualifiedFinal:'決勝進出', toBronze:'3位決定戦へ', fourth:'4位', nextMatch:'次の試合', backGame:'ゲームへ戻る', backTable:'テーブルへ戻る', seedNote:'前ステージ成績で順位付けし、次戦の席順は大会ルールに従います。',
-      globalPlayers:'世界プレイヤー', localAI:'自分とAI', refresh:'更新', rename:'プレイヤー名変更', close:'戻る', rating:'Rating', sourceLeague:'積分戦EXP', sourceTournament:'トーナメントEXP',
-      leaderboardTitle:'🏆 ランキング', leaderboardGlobalHelp:'世界ランキングは人間プレイヤーのみ表示し、累計EXP順です。', leaderboardLocalHelp:'自分と27体のAIは同じEXPルールを使用し、AIの獲得EXPもI～IX級倍率が適用されます。',
+      globalPlayers:'世界プレイヤー', localAI:'自分とAI', refresh:'更新', rename:'プレイヤー名変更', close:'戻る', rating:'Rating', aiBaseExp:'AI基礎EXP', sourceLeague:'積分戦EXP', sourceTournament:'トーナメントEXP',
+      leaderboardTitle:'🏆 ランキング', leaderboardGlobalHelp:'世界ランキングは人間プレイヤーのみ表示し、累計EXP順です。', leaderboardLocalHelp:'自分と27体のAIは累計EXPで順位付けされます。各AIにはI～IX級×1000の基礎EXPが一度だけ付与され、実戦EXPは従来ルールで加算されます。',
       detailTitle:'ランキング詳細', backLeaderboard:'ランキングへ戻る', aiTier:'AI階級', playerLevel:'プレイヤーレベル', tournamentGames:'トーナメント数', medals:'優勝／準優勝／3位', medalRate:'入賞率', leagueRate:'積分戦勝率', leagueSeries:'積分戦シリーズ数',
       loading:'読み込み中…', cloudFail:'世界ランキングに接続できません。', noRows:'ランキング記録はまだありません。'
     }
@@ -23137,7 +23153,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return idx>=0?idx+1:1;
   };
   const participantLevel=(player,record=null)=>player?.isAI?aiLevelNumber(player.aiCode):Math.max(1,Math.min(9,Number(record?.playerRankLevel||1)));
-  const totalExp=rec=>Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
+  const totalExp=rec=>(rec?.type==='ai'?Math.max(aiBaseExpForCode(rec?.aiCode),Math.max(0,Number(rec?.aiBaseExp||0))):0)+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
   const localPlayerName=()=>rankingProfileName();
   const localAINameFor=(p,lang=window.gameLanguage||'zh')=>p?.isAI?(localizedAINameByCode(p.aiCode,lang)||stripVisibleRankPrefix(p.name||'')):(p?.name||localPlayerName());
   const ringName=(count,lang=window.gameLanguage||'zh')=>{
@@ -23632,7 +23648,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     const r=rankingRecordByKey(recordKey);if(!r){void showLeaderboardModal(window.__dddLeaderboardScope||'global');return;}const tr=L(),pod=rankingTournamentPodiumTotals(r),leagueWins=r.leagueWinsBySize||{},lang=window.gameLanguage||'zh';
     els.modalBackdrop.querySelector('.modal')?.classList.remove('mode-home-modal');els.modalTitle.textContent=tr.detailTitle;els.modalText.textContent='';
     const tier=r.type==='ai'?`${aiLadderMeta(r.aiCode)?.tier||'—'} ${localizedAINameByCode(r.aiCode,lang)||aiLadderMeta(r.aiCode)?.name||''}`:`${romanLevel(careerPlayerLevel(r))} ${ringName(careerRingCount(r),lang)}`;
-    els.modalBody.innerHTML=`<div class="leaderboard-detail-grid"><div class="leaderboard-detail-item wide"><span>${tr.player}</span><b>${escapeHtml(r.type==='ai'?(localizedAINameByCode(r.aiCode,lang)||r.name):r.name)}</b></div><div class="leaderboard-detail-item wide"><span>${r.type==='ai'?tr.aiTier:tr.playerLevel}</span><b>${escapeHtml(tier)}</b></div><div class="leaderboard-detail-item"><span>${tr.totalExp}</span><b>${totalExp(r)} EXP</b></div><div class="leaderboard-detail-item"><span>${tr.sourceLeague}</span><b>${Number(r.leaguePoints||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.sourceTournament}</span><b>${Number(r.tournamentTP||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.rating}</span><b>${Number(r.rating||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.tournamentGames}</span><b>${Number(r.tournaments||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.medals}</span><b>🥇${pod.champion}　🥈${pod.runnerUp}　🥉${pod.third}</b></div><div class="leaderboard-detail-item"><span>${tr.medalRate}</span><b>${rankingPercent(rankingMedalRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueRate}</span><b>${rankingPercent(rankingLeagueWinRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueSeries}</span><b>${Number(r.leagueSeries||0)}</b></div><div class="leaderboard-detail-item"><span>5P / 4P / 3P / 2P</span><b>${Number(leagueWins[5]||0)} / ${Number(leagueWins[4]||0)} / ${Number(leagueWins[3]||0)} / ${Number(leagueWins[2]||0)}</b></div></div>${r.type!=='ai'?careerProgressSummaryHtml(r):''}${rankingAbilityRadarHtml(r)}`;
+    els.modalBody.innerHTML=`<div class="leaderboard-detail-grid"><div class="leaderboard-detail-item wide"><span>${tr.player}</span><b>${escapeHtml(r.type==='ai'?(localizedAINameByCode(r.aiCode,lang)||r.name):r.name)}</b></div><div class="leaderboard-detail-item wide"><span>${r.type==='ai'?tr.aiTier:tr.playerLevel}</span><b>${escapeHtml(tier)}</b></div><div class="leaderboard-detail-item"><span>${tr.totalExp}</span><b>${totalExp(r)} EXP</b></div>${r.type==='ai'?`<div class="leaderboard-detail-item"><span>${tr.aiBaseExp}</span><b>${Math.max(aiBaseExpForCode(r.aiCode),Number(r.aiBaseExp||0))}</b></div>`:''}<div class="leaderboard-detail-item"><span>${tr.sourceLeague}</span><b>${Number(r.leaguePoints||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.sourceTournament}</span><b>${Number(r.tournamentTP||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.rating}</span><b>${Number(r.rating||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.tournamentGames}</span><b>${Number(r.tournaments||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.medals}</span><b>🥇${pod.champion}　🥈${pod.runnerUp}　🥉${pod.third}</b></div><div class="leaderboard-detail-item"><span>${tr.medalRate}</span><b>${rankingPercent(rankingMedalRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueRate}</span><b>${rankingPercent(rankingLeagueWinRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueSeries}</span><b>${Number(r.leagueSeries||0)}</b></div><div class="leaderboard-detail-item"><span>5P / 4P / 3P / 2P</span><b>${Number(leagueWins[5]||0)} / ${Number(leagueWins[4]||0)} / ${Number(leagueWins[3]||0)} / ${Number(leagueWins[2]||0)}</b></div></div>${r.type!=='ai'?careerProgressSummaryHtml(r):''}${rankingAbilityRadarHtml(r)}`;
     els.modalActions.innerHTML='';els.modalActions.append(makeButton(tr.backLeaderboard,'btn primary',()=>{void showLeaderboardModal(window.__dddLeaderboardScope||'global');}),makeButton(tr.close,'btn',closeModal));els.modalBackdrop.classList.add('open');
   };
 
