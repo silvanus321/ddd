@@ -33,7 +33,8 @@
   <!-- v188: compact round log format; spectator skip; auto-fast-forward AI-only tournament matches; startup/cloud optimization; ambient images externalized -->
   <!-- v189: visible progress panel for automatically simulated pure-AI tournament matches -->
   <!-- v190: all AI avoid back-to-back Explore; hard-block Explore choices that would incur consecutive-event MaxN2 -1 when a safe alternative exists -->
-<!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
+<!-- v191: fix external ambient animal/diver image filenames; keep images external (no base64) -->
+  <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
 <!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
@@ -20969,18 +20970,18 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
 
     // ===== v242 海洋背景演出：尺寸放大2倍；最多同時4隻動物＋2名潛水員 =====
     const AMBIENT_ANIMAL_IMAGES = [
-      "./images/ambient-animal-01.png",
-      "./images/ambient-animal-02.png",
-      "./images/ambient-animal-03.png",
-      "./images/ambient-animal-04.png",
-      "./images/ambient-animal-05.png"
+      "./images/animal-01.png",
+      "./images/animal-02.png",
+      "./images/animal-03.png",
+      "./images/animal-04.png",
+      "./images/animal-05.png"
     ];
     const AMBIENT_DIVER_IMAGES = [
-      "./images/ambient-diver-01.png",
-      "./images/ambient-diver-02.png",
-      "./images/ambient-diver-03.png",
-      "./images/ambient-diver-04.png",
-      "./images/ambient-diver-05.png"
+      "./images/diver-01.png",
+      "./images/diver-02.png",
+      "./images/diver-03.png",
+      "./images/diver-04.png",
+      "./images/diver-05.png"
     ];
     const ambientSwimState = {
       animalCount:0,
@@ -21030,7 +21031,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const img = document.createElement("img");
       img.alt = "";
       img.draggable = false;
+      img.decoding = "async";
       img.src = ambientPick(isAnimal ? AMBIENT_ANIMAL_IMAGES : AMBIENT_DIVER_IMAGES);
+      img.addEventListener("error", () => {
+        console.warn("[DDD v191] Ambient image failed to load:", img.src);
+      }, { once:true });
       sprite.appendChild(img);
       scene.appendChild(sprite);
       ambientSwimState[key]++;
