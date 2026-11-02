@@ -24,9 +24,17 @@
 <!-- v165: all playable modes use six external music/ MP3 tracks; recorded music is not embedded in HTML -->
 <!-- v167: global player names are unique; leaderboard splits into Global Players and My AI; anonymous auth stays invisible until a name is claimed -->
 <!-- v166: Supabase global leaderboard + per-match cloud records + 5-button toolbar + larger home menu type -->
+<!-- v212: X級解鎖32強賽：32→16→8→4→決賽；32/16/8強皆4人組各2局取前2；AI可重複但同AI最多2席；冠亞季320/200/100。 -->
+<!-- v206: X級祝融 AI228：完整繼承共工 Precision4 空手市場精算＋A225連續事件保護；落後時 Flame Pursuit；100場對共工約60% -->
+<!-- v213: standard/league series losers, human and AI alike, earn 50% of winner base EXP; promotion/tournament unchanged -->
 <!DOCTYPE html>
-<!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja --><!-- v164: 32-player tournament changed to 6-game champion path: 32->8->4->2, group winner only from prelim -->
+<!-- v200: X級天照 AI227；以須佐之男 AI62 Precision6 為母體，加入適應局勢、日輪防線、終局收束與即時勝率二次評分。 -->
+<!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja -->
 <html lang="zh-Hant"><head>
+<!-- v211: leaderboard hierarchy explicitly sorts same-tier ranks Gold > Silver > Bronze; X order = 祝融 > 天照 > 宙斯 -->
+<!-- v210: formal 30-AI roster; X級 宙斯／天照／祝融 integrated; X-tier career progression enabled; X-test arena removed -->
+<!-- v209: promotion battle EXP = opponent AI level × 10 per game win; repeat challenges unrestricted -->
+<!-- v208: promotion battle EXP = opponent AI level × 50 per game win; repeat challenges unrestricted -->
   <!-- v186: AI baseline EXP = ladder level × 1000; preserved separately from earned league/tournament EXP -->
   <!-- v185: six-round tutorial labels + wrong-input guards; round 4 must take public Y4 -->
   <!-- v187: round-start action log now includes every player's VP score and MaxN₂ -->
@@ -34,6 +42,7 @@
   <!-- v189: visible progress panel for automatically simulated pure-AI tournament matches -->
   <!-- v190: all AI avoid back-to-back Explore; hard-block Explore choices that would incur consecutive-event MaxN2 -1 when a safe alternative exists -->
 <!-- v191: fix external ambient animal/diver image filenames; keep images external (no base64) -->
+  <!-- v207: promotion challenge changed to best-of-five / first-to-three; failed AI cards show 挑戰失敗 -->
   <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
 <!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>深海洞潛 Deep Dark Dive</title><style>
@@ -4505,7 +4514,7 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="preconnect" href="https://beffzyqtagssjdfhcewv.supabase.co" crossorigin>
 <!-- v165 Supabase cloud sync: browser-safe publishable client -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
+
 
 
 <style id="v166-online-leaderboard-ui">
@@ -4656,6 +4665,18 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
 </section>
 <section class="board">
 <aside class="vertical-track"><div class="track-head"><div class="track-head-group"><img src="./images/token-01.png" alt="VP"><span>VP</span></div><div class="track-head-group"><img src="./images/token-06.png" alt="Max N₂"><span>Max N₂</span></div></div><div id="trackScale" class="track-scale"><div class="track-lane score-lane"></div><div class="track-lane tank-lane"></div><div id="trackTarget" class="track-target"></div><div id="trackTokens" class="track-tokens"></div></div></aside>
+<section id="dddWinRateBar" aria-label="即時勝率">
+  <div class="ddd-v195-win-labels">
+    <div class="ddd-v195-win-player left"></div>
+    <div class="ddd-v195-win-title">即時勝率</div>
+    <div class="ddd-v195-win-player right"></div>
+  </div>
+  <div class="ddd-v195-win-track" role="img" aria-label="即時勝率">
+    <div class="ddd-v195-win-side left"><span class="ddd-v195-win-pct"></span></div>
+    <div class="ddd-v195-win-side right"><span class="ddd-v195-win-pct"></span></div>
+    <i class="ddd-v195-win-mid" aria-hidden="true"></i>
+  </div>
+</section>
 <div class="board-main">
 <div class="middle-row row-zone"><section id="publicZone" class="zone"><div class="zone-label"><strong>公共區</strong><span id="deckMeta" class="meta"></span></div><div id="publicCards" class="cards-row"></div></section><section id="discardZone" class="zone"><div class="zone-label"><strong>棄牌區</strong><span id="discardMeta" class="meta"></span></div><div id="discardPile" class="discard-stack"></div></section></div>
 <section id="actionDock" class="actions-panel board-actions-panel"><div class="action-buttons">
@@ -4885,8 +4906,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
 
     // v169：玩家可選AI只保留依「總得分→得失分」排名前24名；後4名策略程式保留供相容性使用，但不出現在選單。
     // v190：先知二代 AI100 暫時封印。保留程式碼供日後研究，但不加入任何自動/可選 AI 名單，避免高運算成本拖慢遊戲。
-    // v244：27名正式AI改用世界水域神話／妖怪名稱。
-    // 強度分成 I～IX 九級，每級3名；陣列仍由弱至強排列，保留原AI策略與升級順序。
+    // v210：正式AI擴充為30名；I～X十級，每級3名。
+    // 強度分成 I～X 十級，每級3名；陣列仍由弱至強排列，保留原AI策略與升級順序。
     const AI_LADDER_WEAK_TO_STRONG = Object.freeze([
       {code:55, name:"水怪", tier:"I", bottle:"珍珠瓶", ring:"銅環"},
       {code:42, name:"河童", tier:"I", bottle:"珍珠瓶", ring:"銀環"},
@@ -4914,7 +4935,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       {code:59, name:"青龍", tier:"VIII", bottle:"鐵灰瓶", ring:"金環"},
       {code:224,name:"波賽頓", tier:"IX", bottle:"碳黑瓶", ring:"銅環"},
       {code:62, name:"須佐之男", tier:"IX", bottle:"碳黑瓶", ring:"銀環"},
-      {code:225,name:"共工", tier:"IX", bottle:"碳黑瓶", ring:"金環"}
+      {code:225,name:"共工", tier:"IX", bottle:"碳黑瓶", ring:"金環"},
+      {code:226,name:"宙斯", tier:"X", bottle:"雷霆瓶", ring:"銅環"},
+      {code:227,name:"天照", tier:"X", bottle:"日輪瓶", ring:"銀環"},
+      {code:228,name:"祝融", tier:"X", bottle:"烈焰瓶", ring:"金環"}
     ]);
     const AI_LADDER_META = Object.freeze(Object.fromEntries(AI_LADDER_WEAK_TO_STRONG.map((item,index)=>[
       item.code,{...item,ladderIndex:index,aiRank:AI_LADDER_WEAK_TO_STRONG.length-index}
@@ -4954,8 +4978,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       });
     }
 
-    // v129：27名正式AI的角色勝利宣言與輕量CSS特效。僅影響終局演出，不參與AI決策或勝負判定。
+    // v210：30名正式AI的角色勝利宣言與輕量CSS特效。僅影響終局演出，不參與AI決策或勝負判定。
     const AI_VICTORY_DATA = Object.freeze({
+      228:{quote:"烈焰所至，連深海也要讓出勝利之路。",effect:"sky",icon:"🔥",particles:["🔥","✦","◆"],a:"#ff8a47",b:"#ffe08a"},
+      227:{quote:"日輪升起之處，勝負再無陰影。",effect:"holy",icon:"☀",particles:["☀","✦","◆"],a:"#ffd45d",b:"#fff5bf"},
+      226:{quote:"雷霆落下之前，勝負早已寫在天際。",effect:"storm",icon:"⚡",particles:["⚡","✦","◆"],a:"#8ab4ff",b:"#fff2a6"},
       225:{quote:"就算是不周山，也擋不住我的勝利。",effect:"wave",icon:"🌊",particles:["💧","🌊","◆"],a:"#29b6f6",b:"#ffd45d"},
       62:{quote:"暴風已止，因為勝負已定。",effect:"storm",icon:"⚡",particles:["⚡","✦","💧"],a:"#8ab4ff",b:"#fff2a6"},
       224:{quote:"大海已經宣判——勝利屬於我。",effect:"wave",icon:"🔱",particles:["🔱","💧","✦"],a:"#3bbde8",b:"#ffe58a"},
@@ -4985,8 +5012,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       55:{quote:"嘿嘿……深水裡，可不只你一個人。",effect:"abyss",icon:"◉",particles:["◉","◌","💧"],a:"#5aa9cf",b:"#d9f4ff"}
     });
 
-    // v133：27名AI戰敗怒吼。終局演出會在「勝者宣言」與「隨機一名敗方AI怒吼」之間隨機擇一。
+    // v210：30名AI戰敗怒吼。終局演出會在「勝者宣言」與「隨機一名敗方AI怒吼」之間隨機擇一。
     const AI_DEFEAT_QUOTES = Object.freeze({
+      228:"火勢暫熄而已，下一次連海都會燃起來。",
+      227:"日輪會再次升起，下一局不會留下陰影。",
+      226:"雷雲還在聚集，下一道雷會落在勝利上。",
       225:"下一次，淹沒的就是全世界。",
       62:"這場風暴還沒結束……下一次我會親手斬斷你的勝利。",
       224:"凡人，別把一次僥倖當成大海的旨意。",
@@ -5207,7 +5237,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     }
     if(AI_DISPLAY_PROFILES[61]) AI_DISPLAY_PROFILES[61]={...AI_DISPLAY_PROFILES[61],pairType:"old",sourceRank:999,sourceAvgN:7.80};
     if(AI_DISPLAY_PROFILES[62]) AI_DISPLAY_PROFILES[62]={...AI_DISPLAY_PROFILES[62],pairType:"new",sourceRank:999,sourceAvgN:7.80};
-    // v210：依 v209「精算三代新 A224 關主 vs 51 AI、每組10局」挑選每組新/舊較佳版本；正式保留26 AI。
+    // 歷史實測資料沿用既有27 AI；v210另正式加入3名X級AI，總數30。
     // 排名沿用既有公式：平均得分相對百分位50%＋平均得失分35%＋平均終局氮上限15%。A224以對其餘25個保留版本共250局彙總。
     // v225：依 Deep_Dark_Dive_v211_AI_Ranking_26_60Games.csv 與新舊版本比較表更新。
     // 星級按名次分層：1–5名★★★★★；6–11名★★★★；12–17名★★★；18–22名★★；23–26名★。
@@ -5243,11 +5273,21 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const code=Number(codeText),src=AI_DISPLAY_PROFILES[code]||{};
       AI_DISPLAY_PROFILES[code]={...src,...data,experimental:false,sourceRank:data.rank};
     }
+    // v210：X級三AI正式加入。六維初始值繼承各自母體；實戰統計從0開始，再由正式對局動態更新。
+    [[226,224],[227,62],[228,225]].forEach(([code,parent])=>{
+      const src=AI_DISPLAY_PROFILES[parent]||{};
+      AI_DISPLAY_PROFILES[code]={
+        experimental:false,sourceRank:src.rank??null,stars:5,
+        human:{games:0,points:0,score:0,diff:0,n2:0,rounds:0,wins:0,closeLosses:0},
+        analytics:{avgScore:0,avgDiff:0,avgN:0,avgActions:0,scoreEff:0,nEff:0,winRate:0,rating:0},
+        abilities:{...(src.abilities||{})}
+      };
+    });
     AI_ORDER.forEach((code,index)=>{
       const src=AI_DISPLAY_PROFILES[code]||{};
       AI_DISPLAY_PROFILES[code]={...src,rank:index+1,sourceRank:src.sourceRank??src.rank??index+1,experimental:false};
     });
-    const AI_V210_SELECTED_CODES = Object.freeze([225,62,224,59,54,45,50,47,211,46,48,220,202,212,206,215,12,39,17,203,205,41,11,213,51,42,55]);
+    const AI_V210_SELECTED_CODES = Object.freeze([228,227,226,225,62,224,59,54,45,50,47,211,46,48,220,202,212,206,215,12,39,17,203,205,41,11,213,51,42,55]);
     function aiVariantEffectiveRank(code){
       return Number(AI_DISPLAY_PROFILES[Number(code)]?.rank??999);
     }
@@ -6756,8 +6796,9 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     const RANKING_PROFILE_KEY = "deepDarkDiveRankingProfileV1";
     // 完整積分系列（最多3局）只有系列勝者取得生涯勝場與獎勵分；單局積分不直接加入排行榜。
     const LEAGUE_WIN_POINTS = {2:20,3:30,4:40,5:50};
+    // v213：一般賽系列敗者（真人與AI）取得勝者基礎EXP的一半：2P=10、3P=15、4P=20、5P=25。
     // v163：錦標積分全面加倍。只有冠／亞／季軍取得錦標積分。
-    // 12人 120/80/40；16人 160/100/60；24人 240/160/80；32人 320/200/120。
+    // 12人 120/80/40；16人 160/100/60；24人 240/160/80；32人 320/200/100。
     // v170：以下皆為「基礎 EXP」；實際取得 = 基礎 EXP × 參賽者大等級。
     const TOURNAMENT_PODIUM_POINTS = {
       4:[40,20,10],
@@ -6766,15 +6807,15 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       16:[160,100,50],
       18:[180,120,60],
       24:[240,160,80],
-      // 保留舊32人資料相容，但新版生涯不再開放32強。
-      32:[320,200,120]
+      // v212：X級正式開放32強，冠／亞／季軍基礎EXP為320／200／100。
+      32:[320,200,100]
     };
     const AI_RANKING_TIERS = [
-      {maxRank:5, stars:5, tier:"S", label:"頂尖", initialRating:1400},
-      {maxRank:11,stars:4, tier:"A", label:"強力", initialRating:1300},
-      {maxRank:17,stars:3, tier:"B", label:"中上", initialRating:1200},
-      {maxRank:22,stars:2, tier:"C", label:"中等", initialRating:1100},
-      {maxRank:27,stars:1, tier:"D", label:"入門", initialRating:1000}
+      {maxRank:8, stars:5, tier:"S", label:"頂尖", initialRating:1400},
+      {maxRank:14,stars:4, tier:"A", label:"強力", initialRating:1300},
+      {maxRank:20,stars:3, tier:"B", label:"中上", initialRating:1200},
+      {maxRank:25,stars:2, tier:"C", label:"中等", initialRating:1100},
+      {maxRank:30,stars:1, tier:"D", label:"入門", initialRating:1000}
     ];
     function rankingAITierInfo(code){
       const rank=AI_ORDER.indexOf(Number(code))+1;
@@ -6838,10 +6879,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     const AI_UNLOCK_STEP_POINTS=1000;
     // v183：玩家階級採固定累計 EXP 門檻；每級每一階段成本＝100 EXP × 級數。
     // 例：I銅0／I銀100／I金200；II銅300／II銀500／II金700；IV銅1800／IV銀2200／IV金2600。
-    const PLAYER_RANK_MAX = 9;
+    const PLAYER_RANK_MAX = 10;
     const PLAYER_RANK_RINGS = Object.freeze(["","銅","銀","金"]);
-    const ROMAN_LEVELS = Object.freeze(["I","II","III","IV","V","VI","VII","VIII","IX"]);
-    // v186：每名 AI 固有基礎 EXP＝其 I～IX 階級 × 1000。
+    const ROMAN_LEVELS = Object.freeze(["I","II","III","IV","V","VI","VII","VIII","IX","X"]);
+    // v210：每名 AI 固有基礎 EXP＝其 I～X 階級 × 1000。
     // 這是一次性的排名基準，不屬於一般賽或錦標賽實戰 EXP，也不會每次出場重複累加。
     function aiBaseExpForCode(code){
       const tier=aiLadderMeta(Number(code))?.tier;
@@ -6899,7 +6940,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if(!target) return true;
       return careerTotalPoints(rec)>=careerTierThresholds(careerPlayerLevel(rec)).gold;
     }
-    function careerPromotionReward(level){ return Math.max(1,Math.min(8,Number(level)||1))*20; }
+    function careerPromotionReward(level){ return Math.max(1,Math.min(PLAYER_RANK_MAX,Number(level)||1))*20; }
     function careerRankMetal(rec=careerCurrentProfile()){
       const rings=careerRingCount(rec);
       return rings>=3?{key:"gold",name:"金",symbol:"●"}:rings===2?{key:"silver",name:"銀",symbol:"●"}:rings===1?{key:"bronze",name:"銅",symbol:"●"}:{key:"none",name:"未升環",symbol:"○"};
@@ -6982,11 +7023,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       return AI_ORDER.slice(Math.max(0,AI_ORDER.length-count));
     }
     function careerIsAIUnlocked(code){return new Set(careerUnlockedAICodes().map(Number)).has(Number(code));}
-    function tournamentRequiredLevel(size){return {4:2,8:3,12:4,16:5,18:6,24:8}[Number(size)]||999;}
+    function tournamentRequiredLevel(size){return {4:2,8:3,12:4,16:5,18:6,24:8,32:10}[Number(size)]||999;}
     function tournamentRequiredRoman(size){const lv=tournamentRequiredLevel(size);return ROMAN_LEVELS[lv-1]||"?";}
     function careerTournamentUnlocked(size){return careerPlayerLevel(careerCurrentProfile())>=tournamentRequiredLevel(size);}
     function tournamentSizeOptionsHtml(){
-      const sizes=[4,8,12,16,18,24];
+      const sizes=[4,8,12,16,18,24,32];
       const unlocked=sizes.filter(careerTournamentUnlocked);
       const selected=unlocked.length?unlocked[unlocked.length-1]:null;
       return sizes.map(size=>{
@@ -7003,7 +7044,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const count=careerResolvedUnlockCount(rec),points=careerTotalPoints(rec),next=careerNextUnlockPoints(rec),cap=careerLevelUnlockCount(rec);
       const prevReq=Math.max(0,(count-AI_UNLOCK_INITIAL)*AI_UNLOCK_STEP_POINTS);
       const pct=count>=cap?100:rankingClamp((points-prevReq)/AI_UNLOCK_STEP_POINTS,0,1)*100;
-      const tour=[4,8,12,16,18,24].map(size=>`${careerPlayerLevel(rec)>=tournamentRequiredLevel(size)?"✅":"🔒"}${size}強`).join("　");
+      const tour=[4,8,12,16,18,24,32].map(size=>`${careerPlayerLevel(rec)>=tournamentRequiredLevel(size)?"✅":"🔒"}${size}強`).join("　");
       const badge=careerRankBadgeHtml(rec);
       const unlockCopy=count>=AI_ORDER.length?"全部AI已解鎖":`目前${ROMAN_LEVELS[careerPlayerLevel(rec)-1]}級可挑戰 ${count} 名AI；升級先解鎖下一級2名AI，金級再解鎖關主AI`;
       return `<div class="career-progress-card"><b>玩家等級 ${badge}</b><br><b>可挑戰AI ${count}/${AI_ORDER.length}</b>｜總 EXP ${points}<div class="career-progress-bar"><i style="--career-pct:${pct.toFixed(1)}%"></i></div>${unlockCopy}<br>${tour}</div>`;
@@ -7094,7 +7135,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const info=rankingAITierInfo(code),key=rankingAIKey(code),name=AI_PROFILES[code]?.name||`AI${code}`;
         if(!store[key]) store[key]=rankingBlankRecord({name,type:"ai",aiCode:Number(code),rating:info.initialRating,tier:info.tier,stars:info.stars,aiRank:info.rank});
         else store[key]=rankingNormalizeRecord(store[key],{name,type:"ai",aiCode:Number(code),rating:Number(store[key].rating||info.initialRating),tier:info.tier,stars:info.stars,aiRank:info.rank});
-        // 星級與AI名稱依目前27AI正式榜單更新；Rating保留實戰值。
+        // 星級與AI名稱依目前30AI正式榜單更新；Rating保留實戰值。
         store[key].name=name;store[key].type="ai";store[key].aiCode=Number(code);store[key].tier=info.tier;store[key].stars=info.stars;store[key].aiRank=info.rank;
       });
       rankingWriteStore(store);return store;
@@ -7126,28 +7167,35 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const store=rankingEnsureAIProfiles();
       rankedPlayers.forEach(p=>rankingEnsureParticipantInStore(store,p));
       const keys=rankedPlayers.map(rankingParticipantKey);
-      if(keys.some(k=>(store[k]?.historyKeys||[]).includes(eventKey)))return;
-      const before=Object.fromEntries(keys.map(k=>[k,Number(store[k]?.rating||1000)]));
-      const n=rankedPlayers.length;
+      const uniqueKeys=[...new Set(keys)];
+      if(uniqueKeys.some(k=>(store[k]?.historyKeys||[]).includes(eventKey)))return;
+      const before=Object.fromEntries(uniqueKeys.map(k=>[k,Number(store[k]?.rating||1000)]));
+      const positions=new Map();
+      keys.forEach((k,i)=>{if(!positions.has(k))positions.set(k,[]);positions.get(k).push(i);});
       const deltas={};
-      rankedPlayers.forEach((p,i)=>{
-        const key=keys[i],current=before[key];let delta=0;
-        for(let j=0;j<n;j++){
-          if(i===j)continue;
-          const oppKey=keys[j],oppRating=before[oppKey];
+      uniqueKeys.forEach(key=>{
+        const current=before[key];let delta=0;
+        const ownPos=positions.get(key)||[];
+        for(const oppKey of uniqueKeys){
+          if(oppKey===key)continue;
+          const oppPos=positions.get(oppKey)||[],oppRating=before[oppKey];
+          let actualSum=0,pairs=0;
+          ownPos.forEach(i=>oppPos.forEach(j=>{actualSum+=i<j?1:0;pairs++;}));
+          const actual=pairs?actualSum/pairs:.5;
           const expected=1/(1+Math.pow(10,(oppRating-current)/400));
-          const actual=i<j?1:0;
-          delta+=24*(actual-expected)/Math.max(1,n-1);
+          delta+=24*(actual-expected)/Math.max(1,uniqueKeys.length-1);
         }
         deltas[key]=delta;
       });
-      rankedPlayers.forEach((p,i)=>{
-        const key=keys[i],rec=store[key];
+      uniqueKeys.forEach(key=>{
+        const rec=store[key],pos=positions.get(key)||[],best=Math.min(...pos);
         rec.rating=Math.max(100,Math.round(before[key]+deltas[key]));
         rec.ratedMatches=Number(rec.ratedMatches||0)+1;
-        if(i===0)rec.wins=Number(rec.wins||0)+1;
-        if(i<Math.min(3,n))rec.podiums=Number(rec.podiums||0)+1;
-        if([2,3,4,5].includes(n)){while(rec.placements[n].length<n)rec.placements[n].push(0);rec.placements[n][i]=Number(rec.placements[n][i]||0)+1;}
+        if(best===0)rec.wins=Number(rec.wins||0)+1;
+        if(best<Math.min(3,rankedPlayers.length))rec.podiums=Number(rec.podiums||0)+1;
+        if(pos.length===1&&[2,3,4,5].includes(rankedPlayers.length)){
+          const i=pos[0];while(rec.placements[rankedPlayers.length].length<rankedPlayers.length)rec.placements[rankedPlayers.length].push(0);rec.placements[rankedPlayers.length][i]=Number(rec.placements[rankedPlayers.length][i]||0)+1;
+        }
         rec.historyKeys.push(eventKey);if(rec.historyKeys.length>300)rec.historyKeys=rec.historyKeys.slice(-300);
         rec.updatedAt=Date.now();
       });
@@ -7203,7 +7251,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         rec.rankStartTotalPoints=careerTotalPoints(rec);
       }
       const afterLevel=careerPlayerLevel(rec);
-      const item={at:Date.now(),targetCode,won:promoted,cleared,practice:!gatekeeper,gatekeeper,beforeLevel,afterLevel,reward:0,targetName:AI_PROFILES[targetCode]?.name||`AI${targetCode}`};
+      const item={at:Date.now(),targetCode,won:promoted,cleared,practice:!gatekeeper,gatekeeper,beforeLevel,afterLevel,reward:0,seriesWins:Number(game.settings?.promotionSeriesWins||0),seriesLosses:Number(game.settings?.promotionSeriesLosses||0),targetName:AI_PROFILES[targetCode]?.name||`AI${targetCode}`};
       rec.promotionHistory.push(item);if(rec.promotionHistory.length>120)rec.promotionHistory=rec.promotionHistory.slice(-120);
       rec.historyKeys.push(promotionEvent);game.promotionResult=item;return item;
     }
@@ -7229,13 +7277,16 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       }else if(t.size===32){
         quarter=["M","N"].flatMap(g=>t.standings[g]||t.groups[g]||[]).filter(p=>p&&!fixedIds.has(p.id));
         quarter=rankingSortStage([...new Map(quarter.map(p=>[p.id,p])).values()],"quarter");
+        const r16=["I","J","K","L"].flatMap(g=>t.standings[g]||t.groups[g]||[]).filter(p=>p&&!fixedIds.has(p.id)&&!quarter.some(q=>q.id===p.id));
+        const r16Sorted=[...new Map(r16.map(p=>[p.id,p])).values()].sort((a,b)=>compareRound16Seeds(a,b));
+        quarter=quarter.concat(r16Sorted);
       }
       const used=new Set([...fixedIds,...quarter.map(p=>p.id)]);
       const prelim=(t.allPlayers||[]).filter(p=>!used.has(p.id));
       return [...fixed,...quarter,...rankingSortStage(prelim,"prelim")].slice(0,t.size);
     }
     function rankingRecordTournamentFinal(){
-      const t=game.tournament;if(!t?.results?.champion||![4,8,12,16,18,24].includes(Number(t.size)))return;
+      const t=game.tournament;if(!t?.results?.champion||![4,8,12,16,18,24,32].includes(Number(t.size)))return;
       const order=rankingTournamentFinalOrder(t),event=`tournament:${t.id||"legacy"}:honor`,store=rankingEnsureAIProfiles();
       const podiumPoints=TOURNAMENT_PODIUM_POINTS[t.size]||[];
       order.forEach((p,i)=>{
@@ -7354,11 +7405,24 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     function rankingPercent(value){
       return `${(Math.max(0,Number(value)||0)*100).toFixed(1)}%`;
     }
-    // v232 單一排行榜排序：
-    // 錦標積分 > 冠軍 > 亞軍 > 季軍 > 奪牌率 > 一般積分 > 5人 > 4人 > 3人 > 2人勝場 > 勝率。
+    // v211 排行階級優先順序：大等級由高到低；同級固定 金 > 銀 > 銅。
+    // 例：X級固定為 祝融（金） > 天照（銀） > 宙斯（銅）。
+    // 階級／環相同時，才沿用原有戰績 tie-break。
+    function rankingHierarchyMeta(rec){
+      if(rec?.type==="ai"){
+        const meta=aiLadderMeta(Number(rec?.aiCode));
+        const level=Math.max(1,ROMAN_LEVELS.indexOf(meta?.tier)+1);
+        const ring=meta?.ring==="金環"?3:meta?.ring==="銀環"?2:1;
+        return {level,ring};
+      }
+      return {level:careerPlayerLevel(rec),ring:careerRingCount(rec)};
+    }
     function rankingCompareUnified(a,b){
+      const ar=rankingHierarchyMeta(a),br=rankingHierarchyMeta(b);
       const ap=rankingTournamentPodiumTotals(a),bp=rankingTournamentPodiumTotals(b);
-      return (Number(b.tournamentTP||0)-Number(a.tournamentTP||0))
+      return (br.level-ar.level)
+        || (br.ring-ar.ring)
+        || (Number(b.tournamentTP||0)-Number(a.tournamentTP||0))
         || (bp.champion-ap.champion)
         || (bp.runnerUp-ap.runnerUp)
         || (bp.third-ap.third)
@@ -7432,7 +7496,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         return {roman:meta.tier,ring};
       }
       const idx=Math.max(0,AI_ORDER.indexOf(Number(code)));
-      const level=Math.max(1,Math.min(9,9-Math.floor(idx/3)));
+      const level=Math.max(1,Math.min(PLAYER_RANK_MAX,PLAYER_RANK_MAX-Math.floor(idx/3)));
       const pos=idx%3,ring=pos===0?"gold":pos===1?"silver":"bronze";
       return {roman:ROMAN_LEVELS[level-1],ring};
     }
@@ -7442,7 +7506,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     }
     function stripVisibleRankPrefix(name){
       return String(name??"")
-        .replace(/^\s*(?:IX|VIII|VII|VI|V|IV|III|II|I)\s*(?:級)?\s*[·・\-—:：|｜]?\s*/i,"")
+        .replace(/^\s*(?:X|IX|VIII|VII|VI|V|IV|III|II|I)\s*(?:級)?\s*[·・\-—:：|｜]?\s*/i,"")
         .replace(/^\s*(?:S|A|B|C|D)\s*(?:級)?\s*[·・\-—:：|｜]?\s*/i,"")
         .trim();
     }
@@ -7485,7 +7549,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       els.modalBackdrop.querySelector(".modal")?.classList.remove("mode-home-modal");
       els.modalTitle.textContent="🏆 排行榜";
       els.modalBody.dataset.view="leaderboard";
-      els.modalText.textContent=scope==="global"?"正在讀取全球玩家排行榜…":"顯示這台裝置上的你與 27 個 AI 戰績。";
+      els.modalText.textContent=scope==="global"?"正在讀取全球玩家排行榜…":"顯示這台裝置上的你與 30 個 AI 戰績。";
       els.modalBody.innerHTML=`<div class="empty-zone" style="min-height:120px">${scope==="global"?"☁️ 讀取線上排行中…":"🤖 讀取本機 AI 排行中…"}</div>`;
       els.modalError.textContent="";
       els.modalActions.innerHTML="";
@@ -7518,7 +7582,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         ? (cloudError
             ? "全球排行榜目前無法連線；可切換到「我與 AI」查看本機排名。"
             : "全球玩家排行榜只列真人；總積分＝錦標積分＋一般積分。點玩家名稱可查看詳細戰績。")
-        : "「我與 AI」只使用這台裝置的 localStorage，保留你與 27 個 AI 的原本排名，不會受到其他玩家影響。";
+        : "「我與 AI」只使用這台裝置的 localStorage，保留你與 30 個 AI 的排名，不會受到其他玩家影響。";
 
       const tabs=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px">
         <button type="button" class="btn ${scope==="global"?"primary":""}" data-leaderboard-scope="global">🌐 全球玩家</button>
@@ -8326,7 +8390,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     window.gameLanguage=gameLanguage;
     const GAME_LANGUAGE_ORDER = ["zh","en","ja"];
     // v155: canonical trilingual AI display names, available before first log/leaderboard render.
-    window.DDD_AI_NAMES = window.DDD_AI_NAMES || {"55": {"zh": "水怪", "en": "Water Monster", "ja": "水怪"}, "42": {"zh": "河童", "en": "Kappa", "ja": "河童"}, "51": {"zh": "飛魚", "en": "Flying Fish", "ja": "飛魚"}, "213": {"zh": "人魚", "en": "Mermaid", "ja": "人魚"}, "11": {"zh": "賽蓮", "en": "Siren", "ja": "セイレーン"}, "41": {"zh": "河伯", "en": "River Lord", "ja": "河伯"}, "205": {"zh": "寧妙", "en": "Ningmiao", "ja": "寧妙"}, "203": {"zh": "媽祖", "en": "Mazu", "ja": "媽祖"}, "17": {"zh": "乙姬", "en": "Otohime", "ja": "乙姫"}, "39": {"zh": "九頭蛇", "en": "Hydra", "ja": "ヒュドラ"}, "12": {"zh": "磯撫", "en": "Isonade", "ja": "磯撫"}, "215": {"zh": "贔屭", "en": "Bixi", "ja": "贔屭"}, "206": {"zh": "克拉肯", "en": "Kraken", "ja": "クラーケン"}, "212": {"zh": "化鯨", "en": "Bake-kujira", "ja": "化鯨"}, "202": {"zh": "鯤鵬", "en": "Kunpeng", "ja": "鯤鵬"}, "220": {"zh": "索貝克", "en": "Sobek", "ja": "ソベク"}, "48": {"zh": "海坊主", "en": "Umibozu", "ja": "海坊主"}, "46": {"zh": "玄武", "en": "Xuanwu", "ja": "玄武"}, "211": {"zh": "耶夢加得", "en": "Jormungandr", "ja": "ヨルムンガンド"}, "47": {"zh": "八岐大蛇", "en": "Yamata no Orochi", "ja": "八岐大蛇"}, "50": {"zh": "相柳", "en": "Xiangliu", "ja": "相柳"}, "45": {"zh": "利維坦", "en": "Leviathan", "ja": "リヴァイアサン"}, "54": {"zh": "綿津見", "en": "Watatsumi", "ja": "綿津見"}, "59": {"zh": "青龍", "en": "Azure Dragon", "ja": "青龍"}, "224": {"zh": "波賽頓", "en": "Poseidon", "ja": "ポセイドン"}, "62": {"zh": "須佐之男", "en": "Susanoo", "ja": "須佐之男"}, "225": {"zh": "共工", "en": "Gonggong", "ja": "共工"}};
+    window.DDD_AI_NAMES = window.DDD_AI_NAMES || {"55": {"zh": "水怪", "en": "Water Monster", "ja": "水怪"}, "42": {"zh": "河童", "en": "Kappa", "ja": "河童"}, "51": {"zh": "飛魚", "en": "Flying Fish", "ja": "飛魚"}, "213": {"zh": "人魚", "en": "Mermaid", "ja": "人魚"}, "11": {"zh": "賽蓮", "en": "Siren", "ja": "セイレーン"}, "41": {"zh": "河伯", "en": "River Lord", "ja": "河伯"}, "205": {"zh": "寧妙", "en": "Ningmiao", "ja": "寧妙"}, "203": {"zh": "媽祖", "en": "Mazu", "ja": "媽祖"}, "17": {"zh": "乙姬", "en": "Otohime", "ja": "乙姫"}, "39": {"zh": "九頭蛇", "en": "Hydra", "ja": "ヒュドラ"}, "12": {"zh": "磯撫", "en": "Isonade", "ja": "磯撫"}, "215": {"zh": "贔屭", "en": "Bixi", "ja": "贔屭"}, "206": {"zh": "克拉肯", "en": "Kraken", "ja": "クラーケン"}, "212": {"zh": "化鯨", "en": "Bake-kujira", "ja": "化鯨"}, "202": {"zh": "鯤鵬", "en": "Kunpeng", "ja": "鯤鵬"}, "220": {"zh": "索貝克", "en": "Sobek", "ja": "ソベク"}, "48": {"zh": "海坊主", "en": "Umibozu", "ja": "海坊主"}, "46": {"zh": "玄武", "en": "Xuanwu", "ja": "玄武"}, "211": {"zh": "耶夢加得", "en": "Jormungandr", "ja": "ヨルムンガンド"}, "47": {"zh": "八岐大蛇", "en": "Yamata no Orochi", "ja": "八岐大蛇"}, "50": {"zh": "相柳", "en": "Xiangliu", "ja": "相柳"}, "45": {"zh": "利維坦", "en": "Leviathan", "ja": "リヴァイアサン"}, "54": {"zh": "綿津見", "en": "Watatsumi", "ja": "綿津見"}, "59": {"zh": "青龍", "en": "Azure Dragon", "ja": "青龍"}, "224": {"zh": "波賽頓", "en": "Poseidon", "ja": "ポセイドン"}, "62": {"zh": "須佐之男", "en": "Susanoo", "ja": "須佐之男"}, "225": {"zh": "共工", "en": "Gonggong", "ja": "共工"}, "227": {"zh": "天照", "en": "Amaterasu", "ja": "天照"}, "228": {"zh": "祝融", "en": "Zhurong", "ja": "祝融"}};
     const GAME_LANGUAGE_TEXT = {
       zh: {
         button:"中文", buttonAria:"目前介面語言：中文；點擊切換語言",
@@ -9781,7 +9845,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         aiCodes: seatControllers.slice(1).map(value => value === "human" ? 44 : Number(value || 44)),
         seatControllers: seatControllers.slice(),
         mode: requestedMode,
-        tournamentSize: [4,8,12,16,18,24].includes(Number(settings.tournamentSize)) ? Number(settings.tournamentSize) : 4,
+        tournamentSize: [4,8,12,16,18,24,32].includes(Number(settings.tournamentSize)) ? Number(settings.tournamentSize) : 4,
         tournamentHumanAI: seatControllers[0] !== "human" ? Number(seatControllers[0]) : null,
         normalHumanAI: seatControllers[0] !== "human" ? Number(seatControllers[0]) : null,
         enforceCareerUnlock:Boolean(settings.enforceCareerUnlock),
@@ -9789,6 +9853,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         promotionTargetCode:Number(settings.promotionTargetCode)||null,
         promotionStartLevel:Number(settings.promotionStartLevel)||null,
         promotionStreak:Number(settings.promotionStreak||0),
+        promotionSeriesWins:Number(settings.promotionSeriesWins||0),
+        promotionSeriesLosses:Number(settings.promotionSeriesLosses||0),
         promotionThreeWins:Boolean(settings.promotionThreeWins),
         promotionGatekeeper:Boolean(settings.promotionGatekeeper),
         humanDifficulty: ["easy","normal","hard","hell"].includes(String(settings.humanDifficulty))
@@ -9849,9 +9915,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       }
       if (size === 32) {
         return [
-          // 32強：8組4人，各打2場；每組只取第1名，直接晉級8強。
+          // 32強：8組4人，各2場，前2名晉級16強。
           ...groupMatches(["A","B","C","D","E","F","G","H"],"prelim32"),
-          // 8強：2組4人，各打2場；每組前2名晉級四強。
+          // 16強：4組4人，各2場，前2名晉級8強。
+          ...groupMatches(["I","J","K","L"],"round16_32"),
+          // 8強：2組4人，各2場，前2名晉級4強。
           ...groupMatches(["M","N"],"quarter32"),
           {name:"O組 四強戰 (M1 vs N2)",type:"semi",id:"O",sources:["M1","N2"]},
           {name:"P組 四強戰 (N1 vs M2)",type:"semi",id:"P",sources:["N1","M2"]},
@@ -9932,65 +10000,42 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
 
     function initTournament(seatControllers, requestedSize = 24) {
       const requested = Number(requestedSize);
-      const size = [4,8,12,16,18,24].includes(requested) ? requested : 4;
+      const size = [4,8,12,16,18,24,32].includes(requested) ? requested : 4;
       game.mode = "tournament";
       const controllers = Array.isArray(seatControllers) ? seatControllers.slice(0,size) : [];
 
-      // v125：錦標賽自動AI一律先去重複。
-      // 保留使用者明確指定的人類／AI席位；其餘自動席位從尚未使用的AI_ORDER依序補入。
-      const tournamentPool=game.settings.enforceCareerUnlock?careerUnlockedAICodes():AI_ORDER;
-      const usedAICodes=new Set(
-        controllers
-          .filter(controller=>controller!=="human" && Number.isFinite(Number(controller)))
-          .map(controller=>Number(controller))
-      );
-      const uniquePool=tournamentPool.filter(code=>!usedAICodes.has(Number(code)));
-      let uniqueCursor=0;
-      let fallbackCursor=0;
-
-      while (controllers.length < size) {
-        let code=null;
-
-        if(uniqueCursor < uniquePool.length){
-          code=uniquePool[uniqueCursor++];
-        }else{
-          // 目前26個AI足以覆蓋24人錦標賽；此處僅作未來擴充的保底。
-          code=tournamentPool[fallbackCursor % Math.max(1,tournamentPool.length)] || AI_ORDER.at(-1) || 44;
-          fallbackCursor++;
-        }
-
-        controllers.push(code);
-        usedAICodes.add(Number(code));
-      }
-
-
-      // 若設定面板預先填滿了重複AI，也在進入錦標賽時自動替換成不同AI。
-      const seenTournamentAI=new Set();
-      for(let i=0;i<controllers.length;i++){
-        const controller=controllers[i];
-        if(controller==="human") continue;
+      // v212：4～24強維持AI不重複；32強因共有30名AI，允許重複但同一AI整屆最多2席。
+      const tournamentPool=(game.settings.enforceCareerUnlock?careerUnlockedAICodes():AI_ORDER).map(Number).filter(Number.isFinite);
+      const aiCap=size===32?2:1;
+      const counts=new Map();
+      const sanitized=[];
+      for(const controller of controllers){
+        if(controller==="human"){sanitized.push("human");continue;}
         const code=Number(controller);
-        if(!Number.isFinite(code)) continue;
-
-        if(!seenTournamentAI.has(code)){
-          seenTournamentAI.add(code);
-          continue;
-        }
-
-        const replacement=tournamentPool.find(candidate=>!seenTournamentAI.has(Number(candidate)));
-        if(replacement!==undefined){
-          controllers[i]=replacement;
-          seenTournamentAI.add(Number(replacement));
-        }
+        if(!Number.isFinite(code))continue;
+        const used=Number(counts.get(code)||0);
+        if(used<aiCap){sanitized.push(code);counts.set(code,used+1);}
+      }
+      controllers.length=0;controllers.push(...sanitized.slice(0,size));
+      let fillGuard=0;
+      while(controllers.length<size && fillGuard<10000){
+        fillGuard++;
+        const candidates=tournamentPool.filter(code=>Number(counts.get(code)||0)<aiCap);
+        if(!candidates.length)break;
+        const code=candidates[Math.floor(Math.random()*candidates.length)];
+        controllers.push(code);counts.set(code,Number(counts.get(code)||0)+1);
+      }
+      if(controllers.length<size){
+        throw new Error(`錦標賽參賽者不足：${controllers.length}/${size}；同一AI最多${aiCap}席。`);
       }
 
       const allPlayers = controllers.map((controller,index)=>makeSeatPlayer(controller,index,"t"));
       const others = shuffle(allPlayers.slice(1));
-      const initialGroups = size === 4 ? ["A"] : (size === 24 ? ["A","B","C","D","E","F","G","H"] : (size === 18 ? ["A","B","C","D","E","F"] : ((size === 12 || size === 16) ? ["A","B","C","D"] : ["A","B"])));
+      const initialGroups = size === 4 ? ["A"] : ((size === 24 || size === 32) ? ["A","B","C","D","E","F","G","H"] : (size === 18 ? ["A","B","C","D","E","F"] : ((size === 12 || size === 16) ? ["A","B","C","D"] : ["A","B"])));
       const groups = {};
       let cursor = 0;
 
-      const groupSize = (size === 12 || size === 18 || size === 24) ? 3 : 4;
+      const groupSize = (size === 12 || size === 18 || size === 24) ? 3 : 4; // 32強同樣為4人組
       groups.A = [allPlayers[0]];
       while (groups.A.length < groupSize) groups.A.push(others[cursor++]);
       for (const group of initialGroups.slice(1)) {
@@ -10085,17 +10130,34 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       t.results.prelim18Qualifiers=seeds.map(p=>({id:p.id,name:p.name,prelimStats:{...(p.prelimStats||{})}}));
     }
 
-    function build32QuarterGroups(){
-      const t=game.tournament;if(!t||t.size!==32||t.groups.M)return;
+    function compareRound16Seeds(a,b){
+      const sa=a.round16Stats||{},sb=b.round16Stats||{};
+      return compareTournamentStats(sa,sb,Number(sa.round2Order??999)-Number(sb.round2Order??999));
+    }
+    function round16StandingForGroup(group){
+      const t=game.tournament;if(!t)return[];
+      const source=t.standings[group]||t.groups[group]||[];
+      return source.slice().sort(compareRound16Seeds);
+    }
+    function build32Round16Groups(){
+      const t=game.tournament;if(!t||t.size!==32||t.groups.I)return;
       const gs=["A","B","C","D","E","F","G","H"];
-      // 32強8組全部完成2場後，每組只取第1名，共8人進8強。
-      if(!gs.every(g=>(t.standings[g]||[]).length>=1))return;
-      const winners=gs.map(g=>(t.standings[g]||[])[0]).filter(Boolean);
-      if(winners.length!==8)return;
-      // 依初賽跨組成績排序後蛇形分組，避免最強種子過度集中。
-      const seeds=winners.slice().sort(comparePrelimSeeds);
-      t.groups.M=[seeds[0],seeds[3],seeds[4],seeds[7]];
-      t.groups.N=[seeds[1],seeds[2],seeds[5],seeds[6]];
+      if(!gs.every(g=>prelimStandingForGroup(g).length>=2))return;
+      const A=prelimStandingForGroup("A"),B=prelimStandingForGroup("B"),C=prelimStandingForGroup("C"),D=prelimStandingForGroup("D");
+      const E=prelimStandingForGroup("E"),F=prelimStandingForGroup("F"),G=prelimStandingForGroup("G"),H=prelimStandingForGroup("H");
+      // 交叉分組，避免同一32強小組的前2名立刻在16強再次同組。
+      t.groups.I=[A[0],B[1],C[0],D[1]].sort(comparePrelimSeeds);
+      t.groups.J=[B[0],A[1],D[0],C[1]].sort(comparePrelimSeeds);
+      t.groups.K=[E[0],F[1],G[0],H[1]].sort(comparePrelimSeeds);
+      t.groups.L=[F[0],E[1],H[0],G[1]].sort(comparePrelimSeeds);
+    }
+    function build32Round8Groups(){
+      const t=game.tournament;if(!t||t.size!==32||t.groups.M)return;
+      const gs=["I","J","K","L"];
+      if(!gs.every(g=>round16StandingForGroup(g).length>=2))return;
+      const I=round16StandingForGroup("I"),J=round16StandingForGroup("J"),K=round16StandingForGroup("K"),L=round16StandingForGroup("L");
+      t.groups.M=[I[0],J[1],K[0],L[1]].sort(compareRound16Seeds);
+      t.groups.N=[J[0],I[1],L[0],K[1]].sort(compareRound16Seeds);
     }
 
     function tournamentSourcePlayer(code) {
@@ -10132,11 +10194,12 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if (match.type === "group") {
         if (match.stage === "quarter") buildQuarterfinalGroups();
         if (t.size===18 && match.stage==="six18") build18SixGroups();
-        if (t.size===32 && match.stage==="quarter32") build32QuarterGroups();
+        if (t.size===32 && match.stage==="round16_32") build32Round16Groups();
+        if (t.size===32 && match.stage==="quarter32") build32Round8Groups();
         const groupArr = t.groups[match.group] || [];
-        const quarterFirstRound = ["quarter","quarter32","six18"].includes(match.stage) && match.round === 1;
+        const quarterFirstRound = ["quarter","quarter32","round16_32","six18"].includes(match.stage) && match.round === 1;
         // 初賽各組第1場維持隨機順位；所有8強小組第1場依初賽成績排序。
-        const seededQuarterOrder = quarterFirstRound ? groupArr.slice().sort(comparePrelimSeeds) : null;
+        const seededQuarterOrder = quarterFirstRound ? groupArr.slice().sort(match.stage==="quarter32"&&t.size===32?compareRound16Seeds:comparePrelimSeeds) : null;
         if (match.round === 1 && !t.initializedGroups[match.group]) {
           resetTournamentGroupStats(groupArr);
           t.initializedGroups[match.group] = true;
@@ -10263,7 +10326,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       ];
       return header.concat(g?.compactLines||[]).join("\n");
     }
-    // v210：關主模式維持10～100局自訂；Compact更新為V210，正式AI名單縮為每組最佳版本27AI。
+    // v210：關主模式維持10～100局自訂；正式AI名單為30AI。
     // v209：所有模式改為「連續兩個自己的正式回合都有觸發事件，第二回合起氮上限-1」；AI61舊策略封存，AI62新策略改為事件鏈成本感知。
     // v205：關主模式曾固定10局；v209起改為10～100局自訂。
     // v204：所有競爭模式單局平手統一採「得分→氮上限→較晚到達目前氮上限→後順位」；關主模式同分不再記和局。
@@ -10449,7 +10512,10 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       game.leagueGameCount++;
       // v131：積分模式每一局都重新隨機抽選牌組顏色。
       game.settings.colors = randomColorSelection(Math.max(2, Math.min(CONFIG.allColors.length, game.players.length)));
-      if (game.leagueGameCount === 2) {
+      if (game.settings?.promotionBattle) {
+         // v207：升級戰改為5戰3勝；每局交替順位，避免第3局後固定同一人先手。
+         game.players.reverse();
+      } else if (game.leagueGameCount === 2) {
          game.players.reverse(); // 第2局為第1局逆順位
       } else if (game.leagueGameCount === 3) {
          // 第3局：目前總積分高者先；平手依第2局起始順位。
@@ -10927,7 +10993,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         // 任務／合作模式原規則要求空手從牌庫抽1張，因此只記住策略層，不讓AI取得真人沒有的拿公共牌特權。
         if (player.isAI && !isCoopMode()) {
           // v183 精算三代：空手下潛視為「公開市場選牌」，直接比較公共牌、未知牌池、對手需求、攻擊暴露與減壓缺口。
-          if(Number(player.aiCode)===59 || Number(player.aiCode)===60){
+          if(Number(player.aiCode)===59 || Number(player.aiCode)===60 || Number(player.aiCode)===228){
             const p3=precision3EmptyDiveChoice(player);
             if(p3?.card){
               await takePublicOnEmptyDive(player,p3.card);
@@ -18112,6 +18178,9 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       v+=defense*defenseWeight;
       if(a.kind==='explore'){
         const attack=precision5AttackTempoBonus(player,a);
+        if(ctx.ownMargin<=1 && !(ctx.crisis&&attack>=2)) v-=4.0;
+        else if(ctx.ownMargin<=2 && !(ctx.crisis&&attack>=2)) v-=2.4;
+        else if(ctx.ownMargin<=3 && !(ctx.trailing||ctx.crisis)) v-=1.15;
         const synergy=precision5AttackBuildSynergy(player,a);
         // v202：事件攻擊不再是獨立加分。若同一手又能形成更成熟的得分組合，協同價值明顯提高。
         // 純攻擊仍可在對手接近終局時成立；純換牌則必須靠自身轉換EV證明價值。
@@ -18282,8 +18351,207 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       return info.evidence>=gate?baseAction:fallback;
     }
 
+    // v210：X級 AI226 宙斯正式加入30AI梯隊。
+    AI_PROFILES[226]={...AI_PROFILES[59],name:"X 宙斯",label:"X 宙斯｜Thunder Strike Model",family:"zeus",stage:10,event:3.4,safety:2.8,greed:2.4};
+
+    // ===== X級 AI226 宙斯：Thunder Strike Model =====
+    function zeusAttackCandidate(player){
+      const opp=opponentsOf(player)[0]; if(!opp||opp.eliminated)return null;
+      const oppNeed=Math.max(0,game.targetScore-Number(opp.score||0));
+      const oppPressure=pressure(opp), oppRatio=oppPressure/Math.max(1,Number(opp.maxPressure||1));
+      const currentBest=Math.max(bestSurfaceScore(player.hand,player),bestWireScore(player.hand,player));
+      const explores=generatePrecisionExploreActions(player).filter(a=>a.trigger&&[0,1,2,3].includes(Number(a.trigger.value)));
+      let best=null;
+      for(const a of explores){
+        if(precision6ProjectedSelf(player,a).maxPressure<=Number(CONFIG.deathMaxPressure??3))continue;
+        const st=precisionProjectedSelf(player,a);
+        const afterBest=Math.max(bestSurfaceScore(st.hand,{...player,hand:st.hand}),bestWireScore(st.hand,{...player,hand:st.hand}));
+        const build=Math.max(0,afterBest-currentBest);
+        const attack=Math.max(0,eventTacticalUtility(a.trigger,player,[opp]));
+        const damage=Math.max(0,precision4OpponentDamageEV(player,a));
+        const chain=precision6ConsecutiveExplorePenalty(player,a);
+        const selfLoss=Math.max(0,currentBest-afterBest);
+        let score=attack*.055+damage*.92+build*1.10-selfLoss*1.4-chain*.65;
+        if(oppRatio>=.78)score+=attack*.018;
+        if(oppNeed<=4)score+=attack*.012+build*.45;
+        if(immediateWinThreat(opp))score+=attack>=28?3.2:0;
+        const qualifies=(oppRatio>=.78&&attack>=48&&selfLoss<=1)
+          ||(oppNeed<=4&&attack>=40&&build>=.5&&selfLoss<=1)
+          ||(immediateWinThreat(opp)&&attack>=30&&selfLoss<=1);
+        if(!qualifies)continue;
+        if(!best||score>best.score)best={a,score,attack,build,selfLoss};
+      }
+      return best;
+    }
+    function chooseZeusAIAction(player){
+      const win=chooseUniversalImmediateWinningScore(player); if(win)return win;
+      const base=choosePrecision3AIAction(player);
+      const opp=opponentsOf(player)[0];
+      const margin=Number(player.maxPressure||0)-pressure(player);
+      // 自己真的進入低氮危險區才啟動精六保命；不因普通領先就拖慢節奏。
+      if(Number(player.maxPressure||0)<=6||margin<=1)return choosePrecision6AIAction(player);
+      const strike=zeusAttackCandidate(player);
+      if(strike&&strike.score>=3.4)return strike.a;
+      return base;
+    }
+
+
+
+    // ===== X級 AI227：天照 Amaterasu / Precision6 Adaptive Sun Model =====
+    // 直接以須佐之男 AI62（Precision6）為母體，只增加局勢適應、下一手速度與賽點防守。
+    AI_PROFILES[227] = {name:"X 天照", label:"X 天照｜Precision6 Adaptive Sun", family:"precisionX", stage:10, event:3.3, safety:3.35, greed:2.25};
+
+    function amaterasuContext(player){
+      const opp=opponentsOf(player).find(o=>!o.eliminated)||null;
+      const target=Math.max(1,Number(game.targetScore||16));
+      const ownNeed=Math.max(0,target-Number(player.score||0));
+      const oppNeed=opp?Math.max(0,target-Number(opp.score||0)):target;
+      const ownMargin=Number(player.maxPressure||0)-pressure(player);
+      const oppMargin=opp?Number(opp.maxPressure||0)-pressure(opp):0;
+      const scoreDiff=Number(player.score||0)-Number(opp?.score||0);
+      const trailing=scoreDiff<=-3 || (oppNeed<=4&&ownNeed>oppNeed);
+      const leading=scoreDiff>=3 && ownNeed<oppNeed;
+      const crisis=Boolean(opp && (oppNeed<=3 || immediateWinThreat(opp)));
+      return {opp,target,ownNeed,oppNeed,ownMargin,oppMargin,scoreDiff,trailing,leading,crisis};
+    }
+    function amaterasuProjectedTempo(player,a){
+      if(a.kind==='dive') return 0;
+      const before=precisionTurnsToWin(player);
+      const st=precision6ProjectedSelf(player,a);
+      const ghost={...player,hand:st.hand,decomp:st.decomp,score:st.score,maxPressure:st.maxPressure};
+      const after=precisionTurnsToWin(ghost,st);
+      return Math.max(-2,Math.min(3,before-after));
+    }
+    function amaterasuPredictionDelta(player,a,ctx){
+      try{
+        const evalFn=window.DDDWinPrediction?.evaluatePlayer;
+        if(typeof evalFn!=='function' || !ctx?.opp || a.kind==='dive') return 0;
+        const beforeSelf=evalFn(player).value, beforeOpp=evalFn(ctx.opp).value;
+        const old={hand:player.hand,decomp:player.decomp,score:player.score,maxPressure:player.maxPressure,pub:game.public};
+        const st=precision6ProjectedSelf(player,a);
+        player.hand=st.hand; player.decomp=st.decomp; player.score=st.score; player.maxPressure=st.maxPressure;
+        game.public=precisionPublicAfter(a);
+        let afterSelf,afterOpp;
+        try{ afterSelf=evalFn(player).value; afterOpp=evalFn(ctx.opp).value; }
+        finally{ player.hand=old.hand;player.decomp=old.decomp;player.score=old.score;player.maxPressure=old.maxPressure;game.public=old.pub; }
+        return Math.max(-5,Math.min(5,(afterSelf-afterOpp)-(beforeSelf-beforeOpp)));
+      }catch(_){ return 0; }
+    }
+    function amaterasuActionValue(player,a,ctx,pctx){
+      let v=precision6ActionValue(player,a,pctx);
+      v += amaterasuPredictionDelta(player,a,ctx)*0.50;
+      const st=a.kind==='dive'?null:precision6ProjectedSelf(player,a);
+      const projectedNeed=st?Math.max(0,ctx.target-Number(st.score||0)):ctx.ownNeed;
+      const tempo=amaterasuProjectedTempo(player,a);
+      v += tempo*(ctx.trailing?1.35:ctx.leading?.72:1.02);
+
+      // 日輪收束：終局時不只看「這手拿幾分」，還看做完後下一手是否已形成必殺。
+      if(st && projectedNeed>0 && projectedNeed<=4){
+        const ghost={...player,hand:st.hand,decomp:st.decomp,score:st.score,maxPressure:st.maxPressure};
+        const pot=precisionImmediatePotential(ghost,st.hand,st.decomp);
+        const nextBest=Math.max(Number(pot.handBest||0),Number(pot.bankBest||0));
+        if(nextBest>=projectedNeed) v += 3.35 + (4-projectedNeed)*.55;
+        else v += Math.min(1.4,nextBest/Math.max(1,projectedNeed))*1.15;
+      }
+
+      if(a.kind==='surface'||a.kind==='wire'){
+        const s=Number(a.score||0);
+        v += s*(ctx.trailing?.42:ctx.leading?.16:.28);
+        if(projectedNeed<=3) v += (4-projectedNeed)*.62;
+        if(ctx.crisis && s>=3) v += .75;
+      }
+
+      if(a.kind==='decomp'){
+        if(ctx.ownMargin<=2) v += 4.2;
+        else if(ctx.ownMargin<=3) v += 2.6;
+        else if(ctx.ownMargin<=4) v += 1.35;
+        if(ctx.leading) v += .75;
+        if(ctx.ownNeed<=4 && ctx.ownMargin>=3) v -= 1.75;
+      }
+
+      if(a.kind==='explore'){
+        const attack=precision5AttackTempoBonus(player,a);
+        if(ctx.ownMargin<=1 && !(ctx.crisis&&attack>=2)) v-=4.0;
+        else if(ctx.ownMargin<=2 && !(ctx.crisis&&attack>=2)) v-=2.4;
+        else if(ctx.ownMargin<=3 && !(ctx.trailing||ctx.crisis)) v-=1.15;
+        const synergy=precision5AttackBuildSynergy(player,a);
+        if(ctx.crisis) v += attack*.34 + synergy*.12;
+        else if(ctx.trailing) v += attack*.15 + synergy*.22;
+        else if(ctx.leading) v -= Math.max(0,attack<1?0.55:0);
+        if(consecutiveEventLimitCost(player,a)>0){
+          if(ctx.leading) v-=1.35;
+          else if(!ctx.trailing) v-=.55;
+        }
+      }
+
+      if(a.kind==='dive'){
+        if(ctx.ownMargin<=1) v-=5.2;
+        else if(ctx.ownMargin<=2) v-=3.4;
+        else if(ctx.ownMargin<=3) v-=1.6;
+        if(ctx.trailing && (player.hand?.length||0)<=2) v+=.75;
+      }
+
+      // 賽點防守：對手只差1~3分時，能真正造成事件傷害的探勘才得到額外權重。
+      if(ctx.crisis && a.kind==='explore' && a.trigger){
+        const attack=precision5AttackTempoBonus(player,a);
+        if(attack>0) v += Math.min(3.4,attack*.28);
+      }
+      return v;
+    }
+    function chooseAmaterasuAIAction(player){
+      const terminal=chooseUniversalImmediateWinningScore(player); if(terminal)return terminal;
+      const surfaces=generateSurfaceActions(player), wires=generatePrecisionWireActions(player), decomps=generateLegalDecompActions(player), explores=generatePrecisionExploreActions(player);
+      const safe=a=>{
+        if(consecutiveEventLimitCost(player,a)>0 && maxPressureDeathRuleActive()) return precision6ProjectedSelf(player,a).maxPressure>Number(CONFIG.deathMaxPressure??3);
+        return precisionProjectedSelf(player,a).maxPressure>Number(CONFIG.deathMaxPressure??3) || !['surface','wire'].includes(a?.kind);
+      };
+      const records=precision5PrepareThreatContext(player), beforeThreat=precision5IncomingExploreThreat(player,null,records), pctx={records,beforeThreat};
+      const ctx=amaterasuContext(player);
+      const winning=[...surfaces,...wires].filter(safe).filter(a=>player.score+Number(a.score||0)>=game.targetScore);
+      if(winning.length)return bestBy(winning,a=>amaterasuActionValue(player,a,ctx,pctx));
+
+      // 天照專屬「日輪防線」：對手已握有下一手致勝時，優先尋找真正有破壞力的事件探勘。
+      // 不因對手只是高分就亂攻擊；只有 immediate-win 或只差1~2分且事件效益足夠時啟動。
+      if(ctx.opp && (immediateWinThreat(ctx.opp) || ctx.oppNeed<=2)){
+        const shields=explores.filter(safe).filter(a=>a.trigger).map(a=>({
+          a, attack:precision5AttackTempoBonus(player,a), synergy:precision5AttackBuildSynergy(player,a)
+        })).filter(x=>x.attack>0);
+        const shield=bestBy(shields,x=>x.attack*1.65+x.synergy*.55+amaterasuActionValue(player,x.a,ctx,pctx));
+        if(shield && (shield.attack>=2.0 || (ctx.oppNeed===1&&shield.attack>=1.15))) return shield.a;
+      }
+
+      const candidates=[...surfaces.filter(safe),...wires.filter(safe),...decomps,...explores.filter(safe)];
+      if(player.hand.length) activeColors().filter(color=>player.hand.some(c=>c.color===color)).forEach(color=>candidates.push({kind:'dive',color,score:0}));
+      else candidates.push({kind:'dive',score:0});
+      if(!candidates.length)return {kind:'dive',score:0};
+      const baseline=precision5Baseline(player,beforeThreat);
+      const scored=candidates.map(a=>({a,v:amaterasuActionValue(player,a,ctx,pctx)})).sort((x,y)=>y.v-x.v);
+      let best=scored[0];
+      if(best&&best.a.kind==='explore'&&!best.a.trigger&&(best.a.dropped?.length||0)===1&&best.v<baseline&&precision5FinishTempoAdjustment(player,best.a)<=.05){
+        const fallbacks=scored.filter(x=>x.a.kind!=='explore'); if(fallbacks.length)best=fallbacks[0];
+      }
+      return best?.a||{kind:'dive',score:0};
+    }
+
+    // ===== X級 AI228：祝融 / Gonggong Precision4 Flame Pursuit =====
+    // 母體固定使用共工 A225：平手或領先時完整沿用 Precision4 + A225 連續事件保護。
+    // 只有落後時啟動「烈焰追擊」：暫時切到 Precision3 的直接追分節奏；一旦追平立刻回到共工母體。
+    AI_PROFILES[228]={...AI_PROFILES[60],name:"X 祝融",label:"X 祝融｜Gonggong Flame Pursuit",family:"precisionX",stage:10};
+    function chooseZhurongAIAction(player){
+      const opp=opponentsOf(player).find(o=>!o.eliminated)||null;
+      const diff=Number(player.score||0)-Number(opp?.score||0);
+      const gonggongBase=()=>{
+        const raw=aiVariantBaseAction(player,60,false);
+        return aiVariantAdjustConsecutiveExplore(player,raw,60);
+      };
+      return diff>=0 ? gonggongBase() : choosePrecision3AIAction(player);
+    }
+
     function chooseAIAction(player) {
       const selectedCode=Number(player.aiCode||0);
+      if(selectedCode===226) return chooseZeusAIAction(player);
+      if(selectedCode===227) return chooseAmaterasuAIAction(player);
+      if(selectedCode===228) return chooseZhurongAIAction(player);
       const variantBase=Number(AI_NEW_VARIANT_BASE[selectedCode]||0);
       if(variantBase){
         const originalAction=aiVariantBaseAction(player,variantBase,false);
@@ -19670,12 +19938,18 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const humanPromotionPlayer=isPromotionBattle?game.players.find(p=>!p.isAI):null;
         const promotionWonThisGame=Boolean(isPromotionBattle&&ranked[0]&&humanPromotionPlayer&&ranked[0].id===humanPromotionPlayer.id);
         if(isPromotionBattle){
-          game.settings.promotionStreak=promotionWonThisGame?Number(game.settings.promotionStreak||0)+1:0;
-          game.settings.promotionThreeWins=game.settings.promotionStreak>=3;
+          // v207：升級戰為5戰3勝，不再要求三連勝；任一方先拿3勝即結束。
+          if(promotionWonThisGame) game.settings.promotionSeriesWins=Number(game.settings.promotionSeriesWins||0)+1;
+          else game.settings.promotionSeriesLosses=Number(game.settings.promotionSeriesLosses||0)+1;
+          // 保留舊欄位作相容旗標；promotionThreeWins 現代表「本系列玩家已取得3勝」。
+          game.settings.promotionStreak=Number(game.settings.promotionSeriesWins||0);
+          game.settings.promotionThreeWins=game.settings.promotionSeriesWins>=3;
         }
         const victoryPoints = leagueVictoryPoints(game.settings.playerCount);
-        const targetReached = isPromotionBattle ? Boolean(game.settings.promotionThreeWins) : game.players.some(p => p.leaguePoints >= victoryPoints);
-        const isLastGame = isPromotionBattle ? (!promotionWonThisGame || game.leagueGameCount>=3) : game.leagueGameCount >= leagueMaxGames(game.settings.playerCount);
+        const promotionWins=Number(game.settings?.promotionSeriesWins||0);
+        const promotionLosses=Number(game.settings?.promotionSeriesLosses||0);
+        const targetReached = isPromotionBattle ? promotionWins>=3 : game.players.some(p => p.leaguePoints >= victoryPoints);
+        const isLastGame = isPromotionBattle ? (promotionWins>=3 || promotionLosses>=3 || game.leagueGameCount>=5) : game.leagueGameCount >= leagueMaxGames(game.settings.playerCount);
 
         if (targetReached || isLastGame) {
            game.leagueFinished = true;
@@ -19683,7 +19957,9 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
            const top = finalRanked[0];
            const sharedWinners = finalRanked.filter(p => sameLeagueFinalStats(p, top));
            const winnerText = isPromotionBattle
-             ? (game.settings.promotionThreeWins ? `${humanPromotionPlayer?.name||"玩家"} 完成升級賽三連勝！` : `升級賽挑戰失敗，未能完成三連勝。`)
+             ? (promotionWins>=3
+                ? `${humanPromotionPlayer?.name||"玩家"} 完成升級戰，系列 ${promotionWins}：${promotionLosses} 獲勝！`
+                : `升級戰挑戰失敗，系列 ${promotionWins}：${promotionLosses}。`)
              : (sharedWinners.length > 1
                 ? `${sharedWinners.map(p => p.name).join("、")} 積分賽共享勝利！`
                 : `${top.name} 奪得積分賽總冠軍！`);
@@ -19710,9 +19986,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         } else {
            const top = ranked[0];
            if(top) playVictoryEffect(top);
-           const winnerText = `${top.name} 贏得第 ${game.leagueGameCount} 局`;
+           const winnerText = isPromotionBattle
+             ? `${top.name} 贏得第 ${game.leagueGameCount} 局｜系列 ${promotionWins}：${promotionLosses}`
+             : `${top.name} 贏得第 ${game.leagueGameCount} 局`;
            addLog(`🏁 第${game.leagueGameCount}局結束：${winnerText}。`, true);
-           setStatus(`第${game.leagueGameCount}局結束。`, "ok");
+           setStatus(isPromotionBattle?`升級戰系列 ${promotionWins}：${promotionLosses}`:`第${game.leagueGameCount}局結束。`, "ok");
            render();
            showLeagueGameOverModal(winnerText, ranked, false);
         }
@@ -19743,13 +20021,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
             groupArr.forEach(p => { p.tPointDiff = (p.tTotalScore || 0) - bestOtherTotal(p); });
             t.standings[matchInfo.group] = groupArr.slice().sort(sortTournamentPlayers);
 
-            if(t.size===32){
-              // 32人：8組4人各2場取組首，直接形成8強 M/N 兩組。
-              if(matchInfo.stage==="prelim32" && matchInfo.group==="H") build32QuarterGroups();
-            }
-
             // A-D 初賽完成時保存跨組比較用資料，之後進8強重設小組積分也不會遺失。
-            if ([4,8,12,16,18,24,32].includes(t.size) && !["quarter","quarter32","six18"].includes(matchInfo.stage)) {
+            if ([4,8,12,16,18,24,32].includes(t.size) && !["quarter","quarter32","round16_32","six18"].includes(matchInfo.stage)) {
               groupArr.forEach(p => {
                 p.prelimStats = {
                   points:p.tPoints || 0,
@@ -19763,8 +20036,16 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
               // D組初賽結束後立即建立8強E/F，順位依初賽成績，不再隨機。
               if (([12,16].includes(t.size) && matchInfo.group === "D") || (t.size === 24 && matchInfo.group === "H")) buildQuarterfinalGroups();
               if (t.size===18 && matchInfo.stage==="prelim18" && matchInfo.group==="F") build18SixGroups();
+              if (t.size===32 && matchInfo.stage==="prelim32" && matchInfo.group==="H") build32Round16Groups();
             }
 
+            if (t.size===32 && matchInfo.stage==="round16_32") {
+              const standing=t.standings[matchInfo.group]||[];
+              standing.forEach(p=>{
+                p.round16Stats={points:p.tPoints||0,score:p.tTotalScore||0,maxPressure:p.tTotalPressure||0,pointDiff:p.tPointDiff||0,rounds:p.tTotalRounds||game.round,round2Order:p.tRound2Order||0};
+              });
+              if(matchInfo.group==="L") build32Round8Groups();
+            }
             if (([12,16,24].includes(t.size) && matchInfo.stage === "quarter") || (t.size===18 && matchInfo.stage==="six18") || (t.size===32 && matchInfo.stage==="quarter32")) {
               const standing = t.standings[matchInfo.group];
               standing.forEach(p => {
@@ -20530,7 +20811,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       els.modalBackdrop.querySelector(".modal").classList.remove("mode-home-modal");
       els.modalTitle.textContent="▲ 升級賽";els.modalError.textContent="";els.modalActions.innerHTML="";
       if(!target){
-        els.modalText.textContent=careerRingCount(rec)>=3?"你已完成最高 IX級三環。":"你已達 IX級；繼續累積積分可完成三環。";
+        els.modalText.textContent=careerRingCount(rec)>=3?"你已完成最高 X級三環。":"你已達 X級；繼續累積積分可完成三環。";
         els.modalBody.innerHTML=careerRankSummaryHtml(rec);
         els.modalActions.append(makeButton("返回","btn primary",()=>showModeHome(initial)));
         els.modalBackdrop.classList.add("open");return;
@@ -20545,7 +20826,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
             playerCount:2,colors:randomColorSelection(2),aiCodes:[target.code],seatControllers:["human",target.code],
             mode:"league",tournamentSize:12,tournamentHumanAI:null,normalHumanAI:null,humanDifficulty:"easy",
             enforceCareerUnlock:true,promotionBattle:true,promotionTargetCode:target.code,promotionStartLevel:info.level,
-            promotionStreak:0,promotionThreeWins:false
+            promotionStreak:0,promotionSeriesWins:0,promotionSeriesLosses:0,promotionThreeWins:false
           });
           closeModal();
         }));
@@ -20571,7 +20852,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
             <button class="mode-home-btn" type="button" data-mode-entry="ranking"><span class="mode-home-arrow">›</span><span class="mode-home-icon">🏆</span><span class="mode-home-name">排行</span><span class="mode-home-desc">查看玩家與AI階級、總EXP及戰績。</span></button>
             <button class="mode-home-btn" type="button" data-mode-entry="league"><span class="mode-home-arrow">›</span><span class="mode-home-icon">P</span><span class="mode-home-name">一般</span><span class="mode-home-desc">2～5人積分系列，最多3局，累積EXP。</span></button>
             <button class="mode-home-btn" type="button" data-mode-entry="promotion"><span class="mode-home-arrow">›</span><span class="mode-home-icon">▲</span><span class="mode-home-name">升級</span><span class="mode-home-desc">累積EXP，依EXP提升銅／銀／金階級並挑戰升級戰。</span></button>
-            <button class="mode-home-btn" type="button" data-mode-entry="tournament"><span class="mode-home-arrow">›</span><span class="mode-home-icon">T</span><span class="mode-home-name">錦標</span><span class="mode-home-desc">II／IV／VI／VIII級依序解鎖12／16／24／32人錦標賽。</span></button>
+            <button class="mode-home-btn" type="button" data-mode-entry="tournament"><span class="mode-home-arrow">›</span><span class="mode-home-icon">T</span><span class="mode-home-name">錦標</span><span class="mode-home-desc">X級新增32強錦標賽；其他規模依玩家等級逐步解鎖。</span></button>
           </div>
         </section>
       </div>`;
@@ -20608,13 +20889,13 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const entryLabels={solo:"單人模式",league:"積分模式",maldives:"任務模式",tournament:"錦標模式"};
       const entryIcons={solo:"S",league:"P",maldives:"M",tournament:"T"};
       const modeOptions=modeEntry==="tournament"
-        ? [4,8,12,16,18,24].map(size=>`<option value="tournament${size}" ${careerTournamentUnlocked(size)?"":"disabled"}>${careerTournamentUnlocked(size)?"":"🔒"}${size}人錦標賽</option>`).join("")
+        ? [4,8,12,16,18,24,32].map(size=>`<option value="tournament${size}" ${careerTournamentUnlocked(size)?"":"disabled"}>${careerTournamentUnlocked(size)?"":"🔒"}${size}人錦標賽</option>`).join("")
         : modeEntry==="solo"?'<option value="solo">單人模式</option>'
         : modeEntry==="league"?'<option value="league">積分模式</option>'
         : modeEntry==="maldives"?'<option value="maldives">任務模式</option>'
         : '<option value="league">積分模式</option>';
       els.modalTitle.textContent=`${entryLabels[modeEntry]||"積分模式"}設定`;
-      els.modalText.textContent=modeEntry==="solo"?"固定1名玩家，可選真人或任一AI；起始氮上限固定14。系統隨機選2色共24張牌，需要抽牌或翻事件牌卻無牌時依分數評定頭銜。":modeEntry==="maldives"?"選擇任務後，自行設定1～4名搜救人員與1～3天期限；所有玩家起始氮上限固定14。":modeEntry==="tournament"?"錦標賽依玩家階級開放：II級12人、IV級16人、VI級24人、VIII級32人。12／16／24／32人賽奪冠路徑為6局；32人賽採初賽→16強複賽→8強→四強→決賽。所有參賽者起始氮上限固定14。":"選擇遊玩人數、使用牌色與每個真人／AI席位；所有玩家起始氮上限固定14；標準目標為2／3／4／5人＝16／14／12／10分。";
+      els.modalText.textContent=modeEntry==="solo"?"固定1名玩家，可選真人或任一AI；起始氮上限固定14。系統隨機選2色共24張牌，需要抽牌或翻事件牌卻無牌時依分數評定頭銜。":modeEntry==="maldives"?"選擇任務後，自行設定1～4名搜救人員與1～3天期限；所有玩家起始氮上限固定14。":modeEntry==="tournament"?"錦標賽依玩家階級逐步開放；X級新增32強賽。32強採8組4人各2局取前2→16強4組4人各2局取前2→8強2組4人各2局取前2→四強單局→冠亞軍／季軍戰單局；一路晉級最多8局。所有參賽者起始氮上限固定14。":"選擇遊玩人數、使用牌色與每個真人／AI席位；所有玩家起始氮上限固定14；標準目標為2／3／4／5人＝16／14／12／10分。";
       const classicMissions=Object.values(MISSION_CATALOG)
         .filter(m=>!m.custom)
         .sort((a,b)=>(a.missionNumber||999)-(b.missionNumber||999));
@@ -20645,8 +20926,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       els.modalActions.innerHTML="";els.modalError.textContent="";
       const modeSelect=document.getElementById("setupMode"),countSelect=document.getElementById("setupPlayerCount"),classicMissionSelect=document.getElementById("classicMissionSelect"),missionCountSelect=document.getElementById("missionPlayerCount"),missionDaysSelect=document.getElementById("missionDays"),humanDifficultySelect=document.getElementById("humanDifficultySelect");
       const checks=[...els.modalBody.querySelectorAll(".color-options input")],aiSelects=document.getElementById("aiSelects"),aiProfileCard=document.getElementById("aiProfileCard");
-      const allowedTournamentSizes=[4,8,12,16,18,24].filter(careerTournamentUnlocked);
-      const requestedSaved=[4,8,12,16,18,24].includes(Number(game.settings.tournamentSize))?Number(game.settings.tournamentSize):4;
+      const allowedTournamentSizes=[4,8,12,16,18,24,32].filter(careerTournamentUnlocked);
+      const requestedSaved=[4,8,12,16,18,24,32].includes(Number(game.settings.tournamentSize))?Number(game.settings.tournamentSize):4;
       const savedTournamentSize=allowedTournamentSizes.includes(requestedSaved)?requestedSaved:(allowedTournamentSizes.at(-1)||12);
       const savedMode=modeEntry==="tournament"?`tournament${savedTournamentSize}`:(modeEntry==="solo"?"solo":modeEntry==="league"?"league":modeEntry==="maldives"?"maldives":"league");modeSelect.value=savedMode;
       countSelect.value=modeEntry==="league" ? "2" : String(Math.max(2,Math.min(5,Number(game.settings.playerCount)||2)));
@@ -20962,7 +21243,15 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const r=await simulateDuelBatch(62,61,pairs,seedBase);
       return {...r,advantage:r.winRate-0.5,pass:r.winRate>=0.55};
     }
-    window.DeepDarkDiveDuelSimulation={runOnce:simulateDuelOnce,runBatch:simulateDuelBatch,benchmarkPrecision2Vs1,benchmarkPrecision4Vs3,benchmarkPrecision5Vs4,benchmarkPrecision6Vs5,game};
+    async function benchmarkAmaterasuVsSusanoo(pairs=50,seedBase=20261102){
+      const r=await simulateDuelBatch(227,62,pairs,seedBase);
+      return {...r,advantage:r.winRate-0.5,pass:r.winRate>=0.60};
+    }
+    async function benchmarkZhurongVsGonggong(pairs=50,seedBase=20261103){
+      const r=await simulateDuelBatch(228,225,pairs,seedBase);
+      return {...r,advantage:r.winRate-0.5,pass:r.winRate>=0.60};
+    }
+    window.DeepDarkDiveDuelSimulation={runOnce:simulateDuelOnce,runBatch:simulateDuelBatch,benchmarkPrecision2Vs1,benchmarkPrecision4Vs3,benchmarkPrecision5Vs4,benchmarkPrecision6Vs5,benchmarkAmaterasuVsSusanoo,benchmarkZhurongVsGonggong,game};
     window.DeepDarkDiveOracleLab={config:ORACLE_CONFIG,legalActions:()=>oracleLegalActions(currentPlayer()).map(oracleSerializeAction),lastDecision:()=>game.oracleLastDecision||null,profiles:AI_PROFILES,benchmarkTop10:benchmarkOracleTop10,benchmarkReport:()=>game.oracleBenchmarkReport||null};
     window.DeepDarkDiveSimulation = {runOnce:simulateMissionOnce, runBatch:simulateMissionBatch, game};
 
@@ -21148,7 +21437,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
 
 
     // ===== v123 + v248 merged mode layer =====
-    // v123 remains the presentation shell. v248 supplies all 27 AI strategies and the solo/league/tournament engines.
+    // v123 remains the presentation shell. The current build supplies all 30 formal AI strategies and the solo/league/tournament engines.
     function quickShuffleCopy(items){
       const copy=[...(items||[])];
       for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]];}
@@ -21278,7 +21567,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         return;
       }
 
-      // League / points mode. 玩家只選人數；其餘席位由27名AI中隨機抽出且不重複。
+      // League / points mode. 玩家只選人數；其餘席位由30名AI中隨機抽出且不重複。
       els.modalTitle.textContent="積分模式設定";
       els.modalText.textContent="2–5人，固定最多3局。每局牌組重新隨機；真人固定參賽，其餘AI對手由系統隨機決定。";
       els.modalBody.innerHTML=`<div class="merged-setup-stack">
@@ -21293,7 +21582,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const count=Number(countEl.value||2);
         const points=leaguePointsForPlayerCount(count).join("/");
         const career=LEAGUE_WIN_POINTS[count]||0;
-        help.textContent=`${count}人局：每局使用${count}種隨機牌色；名次Pt ${points}；系列目標${leagueVictoryPoints(count)}Pt（最多3局）。系列勝者取得基礎EXP ${career}，實得EXP＝${career}×玩家大等級。`;
+        help.textContent=`${count}人局：每局使用${count}種隨機牌色；名次Pt ${points}；系列目標${leagueVictoryPoints(count)}Pt（最多3局）。系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。`;
       };
       countEl.addEventListener("change",rebuild);
       rebuild();
@@ -21589,7 +21878,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         const count=Number(countEl.value||2), target=leagueVictoryPoints(count);
         const points=leaguePointsForPlayerCount(count).join("/");
         const career=LEAGUE_WIN_POINTS[count]||0;
-        help.innerHTML=`<b>積分方式：</b>每局依最終名次取得 ${points} Pt；先達 ${target} Pt，或第3局結束時總Pt最高者，成為系列勝者。系列最終只比較總Pt，同分可共享勝利；系列勝者取得基礎EXP ${career}，實得EXP＝${career}×玩家大等級。<br>${count}人局使用隨機${count}色牌組，AI對手由系統隨機決定。`;
+        help.innerHTML=`<b>積分方式：</b>每局依最終名次取得 ${points} Pt；先達 ${target} Pt，或第3局結束時總Pt最高者，成為系列勝者。系列最終只比較總Pt，同分可共享勝利；系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。<br>${count}人局使用隨機${count}色牌組，AI對手由系統隨機決定。`;
       };
       countEl.addEventListener("change",rebuild); rebuild();
       els.modalActions.append(
@@ -22605,7 +22894,7 @@ window.DDD_CANONICAL_TERMS = {
 
 <script>
 /* v143 complete AI/name/quote localization */
-window.DDD_AI_NAMES={"55": {"zh": "水怪", "en": "Water Monster", "ja": "水怪"}, "42": {"zh": "河童", "en": "Kappa", "ja": "河童"}, "51": {"zh": "飛魚", "en": "Flying Fish", "ja": "飛魚"}, "213": {"zh": "人魚", "en": "Mermaid", "ja": "人魚"}, "11": {"zh": "賽蓮", "en": "Siren", "ja": "セイレーン"}, "41": {"zh": "河伯", "en": "River Lord", "ja": "河伯"}, "205": {"zh": "寧妙", "en": "Ningmiao", "ja": "寧妙"}, "203": {"zh": "媽祖", "en": "Mazu", "ja": "媽祖"}, "17": {"zh": "乙姬", "en": "Otohime", "ja": "乙姫"}, "39": {"zh": "九頭蛇", "en": "Hydra", "ja": "ヒュドラ"}, "12": {"zh": "磯撫", "en": "Isonade", "ja": "磯撫"}, "215": {"zh": "贔屭", "en": "Bixi", "ja": "贔屭"}, "206": {"zh": "克拉肯", "en": "Kraken", "ja": "クラーケン"}, "212": {"zh": "化鯨", "en": "Bake-kujira", "ja": "化鯨"}, "202": {"zh": "鯤鵬", "en": "Kunpeng", "ja": "鯤鵬"}, "220": {"zh": "索貝克", "en": "Sobek", "ja": "ソベク"}, "48": {"zh": "海坊主", "en": "Umibozu", "ja": "海坊主"}, "46": {"zh": "玄武", "en": "Xuanwu", "ja": "玄武"}, "211": {"zh": "耶夢加得", "en": "Jormungandr", "ja": "ヨルムンガンド"}, "47": {"zh": "八岐大蛇", "en": "Yamata no Orochi", "ja": "八岐大蛇"}, "50": {"zh": "相柳", "en": "Xiangliu", "ja": "相柳"}, "45": {"zh": "利維坦", "en": "Leviathan", "ja": "リヴァイアサン"}, "54": {"zh": "綿津見", "en": "Watatsumi", "ja": "綿津見"}, "59": {"zh": "青龍", "en": "Azure Dragon", "ja": "青龍"}, "224": {"zh": "波賽頓", "en": "Poseidon", "ja": "ポセイドン"}, "62": {"zh": "須佐之男", "en": "Susanoo", "ja": "須佐之男"}, "225": {"zh": "共工", "en": "Gonggong", "ja": "共工"}};
+window.DDD_AI_NAMES={"55": {"zh": "水怪", "en": "Water Monster", "ja": "水怪"}, "42": {"zh": "河童", "en": "Kappa", "ja": "河童"}, "51": {"zh": "飛魚", "en": "Flying Fish", "ja": "飛魚"}, "213": {"zh": "人魚", "en": "Mermaid", "ja": "人魚"}, "11": {"zh": "賽蓮", "en": "Siren", "ja": "セイレーン"}, "41": {"zh": "河伯", "en": "River Lord", "ja": "河伯"}, "205": {"zh": "寧妙", "en": "Ningmiao", "ja": "寧妙"}, "203": {"zh": "媽祖", "en": "Mazu", "ja": "媽祖"}, "17": {"zh": "乙姬", "en": "Otohime", "ja": "乙姫"}, "39": {"zh": "九頭蛇", "en": "Hydra", "ja": "ヒュドラ"}, "12": {"zh": "磯撫", "en": "Isonade", "ja": "磯撫"}, "215": {"zh": "贔屭", "en": "Bixi", "ja": "贔屭"}, "206": {"zh": "克拉肯", "en": "Kraken", "ja": "クラーケン"}, "212": {"zh": "化鯨", "en": "Bake-kujira", "ja": "化鯨"}, "202": {"zh": "鯤鵬", "en": "Kunpeng", "ja": "鯤鵬"}, "220": {"zh": "索貝克", "en": "Sobek", "ja": "ソベク"}, "48": {"zh": "海坊主", "en": "Umibozu", "ja": "海坊主"}, "46": {"zh": "玄武", "en": "Xuanwu", "ja": "玄武"}, "211": {"zh": "耶夢加得", "en": "Jormungandr", "ja": "ヨルムンガンド"}, "47": {"zh": "八岐大蛇", "en": "Yamata no Orochi", "ja": "八岐大蛇"}, "50": {"zh": "相柳", "en": "Xiangliu", "ja": "相柳"}, "45": {"zh": "利維坦", "en": "Leviathan", "ja": "リヴァイアサン"}, "54": {"zh": "綿津見", "en": "Watatsumi", "ja": "綿津見"}, "59": {"zh": "青龍", "en": "Azure Dragon", "ja": "青龍"}, "224": {"zh": "波賽頓", "en": "Poseidon", "ja": "ポセイドン"}, "62": {"zh": "須佐之男", "en": "Susanoo", "ja": "須佐之男"}, "225": {"zh": "共工", "en": "Gonggong", "ja": "共工"}, "227": {"zh": "天照", "en": "Amaterasu", "ja": "天照"}, "228": {"zh": "祝融", "en": "Zhurong", "ja": "祝融"}};
 window.DDD_AI_VICTORY_EN={"225": "Even Mount Buzhou cannot stand in the way of my victory.", "62": "The storm is over, because the outcome is settled.", "224": "The sea has passed judgment—victory is mine.", "59": "Riding the clouds into the sea, I hold this game in my grasp.", "54": "The tides have their order, and so does victory.", "45": "The moment the abyss opened its maw, the outcome was sealed.", "50": "Cut down one head, and eight more are waiting for you.", "47": "Eight heads roar as one. Where can you possibly flee?", "211": "When I encircle the world, even victory has nowhere to escape.", "46": "Let the waves rise a thousand fathoms; I remain unmoved.", "48": "Beneath the surface, the sea is never truly calm.", "220": "Enter my waters, and do not expect to leave unscathed.", "202": "Today I dive into the deep; next I shall soar above the heavens.", "212": "By the time you see me, the ending has already sunk to the seabed.", "206": "Prey caught in my coils never gets a second chance.", "215": "No matter how heavy the victory, I can carry it.", "12": "You thought the sea was calm? I simply had not struck yet.", "39": "Cut down one plan, and I still have two more waiting.", "17": "The Dragon Palace feast opens today for the victor alone.", "203": "Fair winds, calm seas, and a safe return—that is the finest victory.", "205": "Did you drop the Axe of Victory, or the Axe of Defeat?", "41": "This river flows the way I command.", "11": "The moment you heard the song, you had already lost.", "213": "Do not stare only at the light on the surface. True victory lies below.", "51": "Once I cross this wave, I am one step closer to victory than you.", "42": "Once you're in the river, you're on my home ground!", "55": "Heh heh… you're not the only one down in the deep."};
 window.DDD_AI_VICTORY_JA={"225": "不周山でさえ、我が勝利を阻むことはできぬ。", "62": "嵐は止んだ。勝負が決したからだ。", "224": "海はすでに裁きを下した――勝利は我がものだ。", "59": "雲に乗り海へ入る。この勝負、すでに我が掌中。", "54": "潮には秩序があり、勝負にもまた秩序がある。", "45": "深淵が口を開いた時、勝負はすでに終わっていた。", "50": "一つの首を斬っても、まだ八つが待っているぞ。", "47": "八つの首が一斉に吠える。どこへ逃げる？", "211": "我が世界を取り巻けば、勝負さえ逃げ場を失う。", "46": "波が千丈に達しようとも、我は動かぬ。", "48": "海面の下に、本当の静けさなどない。", "220": "我が水域に踏み入れたなら、無傷で帰れると思うな。", "202": "今日は深海に潜み、次の瞬間には九天を翔ける。", "212": "我を見た時には、結末はすでに海底へ沈んでいる。", "206": "我に絡め取られた獲物に、二度目の機会はない。", "215": "どれほど重い勝利でも、我なら背負える。", "12": "海が静かだと思ったか？ 我がまだ動いていなかっただけだ。", "39": "一つの策を斬っても、まだ二つが待っている。", "17": "竜宮の宴は、今日の勝者のためだけに開かれる。", "203": "順風満帆、無事に帰る。それこそ最高の勝利。", "205": "落としたのは勝利の斧か、それとも敗北の斧か？", "41": "この川がどう流れるかは、我が決める。", "11": "歌声を聞いた瞬間、あなたはもう負けていた。", "213": "海面の光だけを見るな。本当の勝利は深みにある。", "51": "この波を越えれば、勝利に一歩近いのは私だ。", "42": "川に入ったら、ここは僕のホームだよ！", "55": "へへ……深い水の中にいるのは、君だけじゃないよ。"};
 window.DDD_AI_DEFEAT_EN={"225": "Next time, the whole world will be submerged.", "62": "This storm is not over… next time I will cut down your victory myself.", "224": "Mortal, do not mistake one lucky break for the will of the sea.", "59": "I yield this game to you. Next time, the dragon's roar will overturn the sea.", "54": "The tide recedes, and it will always rise again.", "45": "The abyss has only closed its eyes. It has not fallen asleep.", "50": "You defeated only one head. The other eight remember you.", "47": "All eight heads remember this humiliation.", "211": "When I tighten my coils around the world again, there will be nowhere to run.", "46": "This shield is unbroken. I have not truly lost.", "48": "Do not celebrate yet… I am still watching from beneath the surface.", "220": "Next time you enter the water, I will bite off your escape first.", "202": "Today I am trapped in shallow water; tomorrow I will soar ninety thousand li.", "212": "Bones may sink into the sea, but their resentment does not vanish.", "206": "I loosened only one tentacle… do not think you escaped.", "215": "I will carry this defeat back with interest.", "12": "You only escaped this tail.", "39": "Cut down one victory? I will grow even more chances.", "17": "The Dragon Palace does not hold two victory banquets for the same guest.", "203": "The wind favored you this time. Next time, perhaps not.", "205": "Looks like you found the Axe of Victory… you will not be so lucky next time.", "41": "The river lets you pass for now, but the current has not surrendered.", "11": "You escaped this song… you will not escape the next.", "213": "You won the surface. The debt below is still unpaid.", "51": "I was one wave short this time. Next time I will fly farther.", "42": "Darn it! Next time I'll drag you into the river and settle this!", "55": "Heh heh… I only sank for a moment. I did not disappear."};
@@ -23184,7 +23473,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   'use strict';
 
   const TOURNAMENT_UNLOCKS = Object.freeze([
-    {level:2,size:4},{level:3,size:8},{level:4,size:12},{level:5,size:16},{level:6,size:18},{level:8,size:24}
+    {level:2,size:4},{level:3,size:8},{level:4,size:12},{level:5,size:16},{level:6,size:18},{level:8,size:24},{level:10,size:32}
   ]);
   const RESULT_I18N = {
     zh:{
@@ -23198,7 +23487,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       unlockPromotion:'解鎖升級戰', unlockAI:'解鎖 {tier} 級 AI：{names}', unlockTournament:'解鎖 {size}強錦標賽',
       winner:'冠軍', runnerUp:'亞軍', third:'季軍', shared:'共享勝利', noExp:'本次沒有取得 EXP', bracketTitle:'錦標賽晉級樹', bracketUpdated:'本場比賽結束，最新戰況更新：', bracketCurrent:'目前錦標賽整體戰況：', prelim:'初賽', groupStage:'分組', quarter:'8強', semi:'四強', finals:'決賽', bronzeMatch:'季軍戰', finalMatch:'冠軍戰', resultCol:'結果', advance1:'第1名晉級', advance2:'前2名晉級', notPlayed:'尚未進行', qualifiedFinal:'晉級冠軍戰', toBronze:'進入季軍戰', fourth:'第4名', nextMatch:'進入下一場', backGame:'返回遊戲', backTable:'返回觀看桌面', seedNote:'依上一階段成績排序；下一場順位依賽制規則調整。',
       globalPlayers:'全球玩家', localAI:'我與 AI', refresh:'重新整理', rename:'修改玩家名稱', close:'返回', rating:'Rating', aiBaseExp:'AI 基礎 EXP', sourceLeague:'一般賽 EXP', sourceTournament:'錦標 EXP',
-      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 27 個 AI 依累計 EXP 排名；每名 AI 另有一次性基礎 EXP＝自身 I～IX 級數 × 1000，實戰 EXP 仍照原規則累積。',
+      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 30 個 AI 依累計 EXP 排名；每名 AI 另有一次性基礎 EXP＝自身 I～X 級數 × 1000，實戰 EXP 仍照原規則累積。',
       detailTitle:'排行榜詳細資料', backLeaderboard:'返回排行榜', aiTier:'AI階級', playerLevel:'玩家等級', tournamentGames:'錦標總場次', medals:'冠／亞／季軍', medalRate:'錦標奪牌率', leagueRate:'積分賽勝率', leagueSeries:'積分賽系列數',
       loading:'讀取中…', cloudFail:'全球排行榜目前無法連線。', noRows:'尚無排行榜紀錄。'
     },
@@ -23213,7 +23502,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       unlockPromotion:'Promotion challenge unlocked', unlockAI:'Unlocked Level {tier} AI: {names}', unlockTournament:'Unlocked {size}-player tournament',
       winner:'Champion', runnerUp:'Runner-up', third:'Third', shared:'Shared victory', noExp:'No EXP earned this time', bracketTitle:'Tournament Bracket', bracketUpdated:'This match is complete. Updated bracket:', bracketCurrent:'Current tournament bracket:', prelim:'Preliminary', groupStage:'Group Stage', quarter:'Quarterfinals', semi:'Semifinals', finals:'Finals', bronzeMatch:'Third-place Match', finalMatch:'Championship', resultCol:'Result', advance1:'Top 1 advances', advance2:'Top 2 advance', notPlayed:'Not played', qualifiedFinal:'Advances to final', toBronze:'To third-place match', fourth:'4th', nextMatch:'Next Match', backGame:'Back to Game', backTable:'Back to Table', seedNote:'Ranked by the previous stage; seating for the next game follows the tournament rules.',
       globalPlayers:'Global Players', localAI:'Me & AI', refresh:'Refresh', rename:'Rename Player', close:'Back', rating:'Rating', aiBaseExp:'AI Base EXP', sourceLeague:'League EXP', sourceTournament:'Tournament EXP',
-      leaderboardTitle:'🏆 Leaderboard', leaderboardGlobalHelp:'Global leaderboard lists human players and sorts by total EXP.', leaderboardLocalHelp:'You and all 27 AI are ranked by total EXP. Each AI also receives a one-time base EXP equal to its I–IX level × 1000; earned EXP still follows the normal rules.',
+      leaderboardTitle:'🏆 Leaderboard', leaderboardGlobalHelp:'Global leaderboard lists human players and sorts by total EXP.', leaderboardLocalHelp:'You and all 30 AI are ranked by tier first (Gold > Silver > Bronze within the same tier), then by performance tie-breaks. Each AI also receives a one-time base EXP equal to its I–X level × 1000; earned EXP still follows the normal rules.',
       detailTitle:'Leaderboard Details', backLeaderboard:'Back to Leaderboard', aiTier:'AI Tier', playerLevel:'Player Level', tournamentGames:'Tournaments', medals:'1st / 2nd / 3rd', medalRate:'Podium Rate', leagueRate:'League Win Rate', leagueSeries:'League Series',
       loading:'Loading…', cloudFail:'Global leaderboard is currently unavailable.', noRows:'No leaderboard records yet.'
     },
@@ -23228,20 +23517,20 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       unlockPromotion:'昇格戦を解放', unlockAI:'{tier}級AIを解放：{names}', unlockTournament:'{size}強トーナメントを解放',
       winner:'優勝', runnerUp:'準優勝', third:'3位', shared:'同率優勝', noExp:'今回はEXP獲得なし', bracketTitle:'トーナメント表', bracketUpdated:'この試合が終了しました。最新状況：', bracketCurrent:'現在のトーナメント状況：', prelim:'予選', groupStage:'グループ戦', quarter:'ベスト8', semi:'準決勝', finals:'決勝', bronzeMatch:'3位決定戦', finalMatch:'優勝決定戦', resultCol:'結果', advance1:'1位通過', advance2:'上位2名通過', notPlayed:'未実施', qualifiedFinal:'決勝進出', toBronze:'3位決定戦へ', fourth:'4位', nextMatch:'次の試合', backGame:'ゲームへ戻る', backTable:'テーブルへ戻る', seedNote:'前ステージ成績で順位付けし、次戦の席順は大会ルールに従います。',
       globalPlayers:'世界プレイヤー', localAI:'自分とAI', refresh:'更新', rename:'プレイヤー名変更', close:'戻る', rating:'Rating', aiBaseExp:'AI基礎EXP', sourceLeague:'積分戦EXP', sourceTournament:'トーナメントEXP',
-      leaderboardTitle:'🏆 ランキング', leaderboardGlobalHelp:'世界ランキングは人間プレイヤーのみ表示し、累計EXP順です。', leaderboardLocalHelp:'自分と27体のAIは累計EXPで順位付けされます。各AIにはI～IX級×1000の基礎EXPが一度だけ付与され、実戦EXPは従来ルールで加算されます。',
+      leaderboardTitle:'🏆 ランキング', leaderboardGlobalHelp:'世界ランキングは人間プレイヤーのみ表示し、累計EXP順です。', leaderboardLocalHelp:'自分と30体のAIは累計EXPで順位付けされます。各AIにはI～X級×1000の基礎EXPが一度だけ付与され、実戦EXPは従来ルールで加算されます。',
       detailTitle:'ランキング詳細', backLeaderboard:'ランキングへ戻る', aiTier:'AI階級', playerLevel:'プレイヤーレベル', tournamentGames:'トーナメント数', medals:'優勝／準優勝／3位', medalRate:'入賞率', leagueRate:'積分戦勝率', leagueSeries:'積分戦シリーズ数',
       loading:'読み込み中…', cloudFail:'世界ランキングに接続できません。', noRows:'ランキング記録はまだありません。'
     }
   };
   const L=()=>RESULT_I18N[window.gameLanguage||'zh']||RESULT_I18N.zh;
   const fmt=(s,vars={})=>String(s).replace(/\{(\w+)\}/g,(_,k)=>vars[k]??'');
-  const romanLevel=n=>ROMAN_LEVELS[Math.max(1,Math.min(9,Number(n)||1))-1]||'I';
+  const romanLevel=n=>ROMAN_LEVELS[Math.max(1,Math.min(PLAYER_RANK_MAX,Number(n)||1))-1]||'I';
   const aiLevelNumber=code=>{
     const tier=aiLadderMeta(Number(code))?.tier;
     const idx=ROMAN_LEVELS.indexOf(tier);
     return idx>=0?idx+1:1;
   };
-  const participantLevel=(player,record=null)=>player?.isAI?aiLevelNumber(player.aiCode):Math.max(1,Math.min(9,Number(record?.playerRankLevel||1)));
+  const participantLevel=(player,record=null)=>player?.isAI?aiLevelNumber(player.aiCode):Math.max(1,Math.min(PLAYER_RANK_MAX,Number(record?.playerRankLevel||1)));
   const totalExp=rec=>(rec?.type==='ai'?Math.max(aiBaseExpForCode(rec?.aiCode),Math.max(0,Number(rec?.aiBaseExp||0))):0)+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
   const localPlayerName=()=>rankingProfileName();
   const localAINameFor=(p,lang=window.gameLanguage||'zh')=>p?.isAI?(localizedAINameByCode(p.aiCode,lang)||stripVisibleRankPrefix(p.name||'')):(p?.name||localPlayerName());
@@ -23260,7 +23549,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   function careerStateFromRecord(rec){
     const fallback={name:localPlayerName(),type:'human',playerRankLevel:1,leaguePoints:0,tournamentTP:0};
     const r=rec||fallback;
-    const level=Math.max(1,Math.min(9,Number(r.playerRankLevel||1)));
+    const level=Math.max(1,Math.min(PLAYER_RANK_MAX,Number(r.playerRankLevel||1)));
     const rings=careerRingCount(r);
     return {level,rings,totalExp:totalExp(r),aiCount:careerResolvedUnlockCount(r),tournaments:tournamentUnlocksForLevel(level)};
   }
@@ -23274,7 +23563,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const need=Math.max(0,thresholds.gold-total);
       return {kind:'gold',need,label:`${romanLevel(state.level)} ${ringName(3,lang)}`.trim()};
     }
-    if(state.level>=9) return {kind:'max',need:0,label:`${romanLevel(state.level)} ${ringName(3,lang)}`.trim()};
+    if(state.level>=PLAYER_RANK_MAX) return {kind:'max',need:0,label:`${romanLevel(state.level)} ${ringName(3,lang)}`.trim()};
     return {kind:'promotion',need:0,label:romanLevel(state.level+1)};
   }
   function careerProgressText(rec,lang=window.gameLanguage||'zh'){
@@ -23305,7 +23594,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   }
   function promotionTargetInfo(rec){
     const state=careerStateFromRecord(rec);
-    if(state.level>=9) return {done:true};
+    if(state.level>=PLAYER_RANK_MAX) return {done:true};
     const target=aiTierMembers(state.level)[2]||aiTierMembers(state.level).at(-1);
     const threshold=careerTierThresholds(state.level).gold;
     return {done:false,target,need:Math.max(0,threshold-state.totalExp),ready:state.rings>=3};
@@ -23320,7 +23609,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     }
     if(before.level===after.level&&before.rings<3&&after.rings>=3){
       out.push({kind:'boss',level:after.level});
-      if(after.level<9) out.push({kind:'promotion'});
+      if(after.level<PLAYER_RANK_MAX) out.push({kind:'promotion'});
     }
     return out;
   }
@@ -23382,7 +23671,8 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return {before,after,rank,unlocks:unlockDiff(before,after)};
   }
 
-  // League / promotion EXP: base award × participant's own level. Promotion consolation is 0/10/20 base EXP; 3 wins remains 20 + level-up.
+  // v213 League EXP: series winners receive 100% base award; series losers (human and AI) receive 50%; each is multiplied by that participant's level.
+  // v209 promotion EXP remains actual series wins × opponent AI level × 10 EXP, with no repeat-challenge restriction; level-up top-up remains unchanged.
   const originalRecordLeagueFinal=rankingRecordLeagueFinal;
   rankingRecordLeagueFinal=function(finalRanked){
     const beforeStore=rankingReadStore();
@@ -23400,20 +23690,29 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const before=beforeByKey[key]||rankingBlankRecord({name:p.name,type:p.isAI?'ai':'human',aiCode:p.aiCode,rating:rec.rating||1000});
       const level=participantLevel(p,before);
       let base=0;
+      let rewardMultiplier=level;
+      let promotionWins=0;
+      let promotionAILevel=0;
       if(game.settings?.promotionBattle){
         if(!p.isAI){
-          const cleared=Boolean(game.settings?.promotionThreeWins||game.promotionResult?.cleared);
-          const winsInAttempt=cleared?3:Math.max(0,Number(game.leagueGameCount||1)-1);
-          base=Math.min(3,winsInAttempt)*10;
+          promotionWins=Math.max(0,Math.min(3,Number(game.settings?.promotionSeriesWins ?? game.promotionResult?.seriesWins ?? 0)));
+          const targetMeta=aiLadderMeta(Number(game.settings?.promotionTargetCode));
+          promotionAILevel=targetMeta?Math.max(1,ROMAN_LEVELS.indexOf(String(targetMeta.tier))+1):Math.max(1,level);
+          base=promotionWins*10;
+          rewardMultiplier=promotionAILevel;
         }
-      }else if(Number(p.leaguePoints||0)===topPoints){
-        base=Number(LEAGUE_WIN_POINTS[n]||0);
+      }else{
+        // v213：一般賽系列勝者取得100%基礎EXP，敗者（真人與AI）取得50%。
+        // 共享勝利時，所有最高Pt玩家皆視為勝者取得100%；其餘玩家取得50%。
+        const winnerBase=Number(LEAGUE_WIN_POINTS[n]||0);
+        const isSeriesWinner=Number(p.leaguePoints||0)===topPoints;
+        base=isSeriesWinner ? winnerBase : Math.floor(winnerBase/2);
       }
-      const coreActual=base*level;
+      const coreActual=base*rewardMultiplier;
       rec.leaguePoints=Number(before.leaguePoints||0)+coreActual;
       let promotionTopUp=0;
-      // v183：關主三連勝升級後，若累計 EXP 尚未達下一級銅門檻，自動補足差額。
-      // 每局勝利的 10 × 等級 EXP 仍照常取得；補足值是晉級獎勵，不取代勝局 EXP。
+      // v207：關主5戰3勝升級後，若累計 EXP 尚未達下一級銅門檻，自動補足差額。
+      // 每局勝利的「對手 AI 等級 × 10 EXP」仍照常取得；補足值是晉級獎勵，不取代勝局 EXP。
       if(game.settings?.promotionBattle && !p.isAI && game.promotionResult?.won){
         const nextLevel=Math.max(1,Math.min(PLAYER_RANK_MAX,Number(game.promotionResult.afterLevel||careerPlayerLevel(rec))));
         const nextBronze=careerTierThresholds(nextLevel).bronze;
@@ -23423,7 +23722,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       }
       const actual=coreActual+promotionTopUp;
       if(rec.type!=='ai') careerSyncUnlockRecord(rec);
-      game._lastExpAwards[p.id]={base,multiplier:level,coreActual,promotionTopUp,actual};
+      game._lastExpAwards[p.id]={base,multiplier:rewardMultiplier,coreActual,promotionTopUp,actual,promotionWins,promotionAILevel,rewardPerWin:game.settings?.promotionBattle?10:0};
     });
     if(game.settings?.promotionBattle&&game.promotionResult){
       const hp=(finalRanked||[]).find(p=>!p.isAI),award=hp?game._lastExpAwards[hp.id]:null;
@@ -23457,13 +23756,15 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     originalRecordTournamentFinal();
     const store=rankingReadStore(),baseAwards=TOURNAMENT_PODIUM_POINTS[Number(t.size)]||[];
     game._lastExpAwards={};
+    const awardedKeys=new Set();
     order.forEach((p,i)=>{
       const key=rankingParticipantKey(p),rec=store[key];if(!rec)return;
       const before=beforeByKey[key]||rankingBlankRecord({name:p.name,type:p.isAI?'ai':'human',aiCode:p.aiCode,rating:rec.rating||1000});
-      const level=participantLevel(p,before),base=i<3?Number(baseAwards[i]||0):0,actual=base*level;
-      rec.tournamentTP=Number(before.tournamentTP||0)+actual;
+      const level=participantLevel(p,before),base=i<3?Number(baseAwards[i]||0):0;
+      const actual=awardedKeys.has(key)?0:base*level;
+      if(!awardedKeys.has(key)){rec.tournamentTP=Number(before.tournamentTP||0)+actual;awardedKeys.add(key);}
       if(rec.type!=='ai') careerSyncUnlockRecord(rec);
-      game._lastExpAwards[p.id]={base,multiplier:level,actual};
+      game._lastExpAwards[p.id]={base:awardedKeys.has(key)&&actual===0?0:base,multiplier:level,actual};
     });
     rankingWriteStore(store);
     const human=order.find(p=>!p.isAI),afterHuman=rankingNormalizeRecord(rankingReadStore()[humanKey],{name:localPlayerName(),type:'human',rating:1000});
@@ -23502,7 +23803,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       promotionText=`${romanLevel(state.level)} ${escapeHtml(name)}｜${promotion.ready?t.ready:fmt(t.needExp,{n:promotion.need})}`;
     }
     const boss=aiGatekeeperAtLevel(state.level);
-    const nextLevel=state.level<9?state.level+1:null;
+    const nextLevel=state.level<PLAYER_RANK_MAX?state.level+1:null;
     const nextAI=state.rings<3&&boss
       ? `${romanLevel(state.level)}｜${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)} (${lang==='en'?'Gold unlock':lang==='ja'?'金で解放':'金級解鎖'})`
       : nextLevel?`${romanLevel(nextLevel)}｜${aiTrainingNamesAtLevel(nextLevel,lang).map(escapeHtml).join(' / ')}`:t.allAI;
@@ -23553,7 +23854,14 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     const tierChanged=before.level!==after.level||before.rings!==after.rings;
     const coreActual=Number(award.coreActual ?? (Number(award.base||0)*Number(award.multiplier||1)));
     const promotionTopUp=Math.max(0,Number(award.promotionTopUp||0));
-    let formula=award.base>0?`${award.base} EXP × ${romanLevel(award.multiplier)} = ${coreActual} EXP`:`0 EXP × ${romanLevel(award.multiplier)} = 0 EXP`;
+    let formula;
+    if(snap.type==='promotion'){
+      const wins=Math.max(0,Number(award.promotionWins||snap.promotionResult?.seriesWins||0));
+      const aiLevel=Math.max(1,Number(award.promotionAILevel||award.multiplier||1));
+      formula=wins>0?`${wins}${lang==='en'?' wins':lang==='ja'?'勝':'勝'} × ${romanLevel(aiLevel)} × 10 EXP = ${coreActual} EXP`:`0${lang==='en'?' wins':lang==='ja'?'勝':'勝'} × ${romanLevel(aiLevel)} × 10 EXP = 0 EXP`;
+    }else{
+      formula=award.base>0?`${award.base} EXP × ${romanLevel(award.multiplier)} = ${coreActual} EXP`:`0 EXP × ${romanLevel(award.multiplier)} = 0 EXP`;
+    }
     if(promotionTopUp>0){
       const topUpLabel=lang==='en'?'Promotion top-up':lang==='ja'?'昇格補填':'晉級補足';
       formula+=` + ${topUpLabel} ${promotionTopUp} EXP = <b>${award.actual} EXP</b>`;
@@ -23589,9 +23897,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   // v173: all tournament bracket views use compact Pt/VP/+/-/N₂/MaxN₂/R labels and full zh/en/ja UI.
   const originalShowTournamentBracket=showTournamentBracket;
   const BRACKET_LABELS={
-    zh:{place:'名次',player:'玩家',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'結果',group:'組',round:'第{n}場',seed:'種子',prelim18:'18強｜6組3人局・各2場・取1',six18:'6強｜2組3人局・各2場・取2',prelim24:'24強初賽｜8組3人局',groups12:'12強分組',groups16:'16強分組',groups4:'4強初賽｜4人局・2場正逆順位',groups8:'8強初賽｜2組4人局・各2場・取2',quarterGroups:'8強分組',semi:'四強',finals:'決賽',seed18:'G組：種子1／4／5　｜　H組：種子2／3／6',seed24:'初賽冠軍蛇形分組',seedEF:'E組：A1／B2／C1／D2　｜　F組：B1／A2／D1／C2'},
-    en:{place:'Place',player:'Player',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'Result',group:'Group',round:'Game {n}',seed:'Seed',prelim18:'Round of 18 | 6 groups of 3 | 2 games | Top 1 advances',six18:'Top 6 | 2 groups of 3 | 2 games | Top 2 advance',prelim24:'Round of 24 | 8 groups of 3',groups12:'Round of 12 Groups',groups16:'Round of 16 Groups',groups4:'Final 4 | 4-player group | 2 games with reversed seating',groups8:'Round of 8 | 2 groups of 4 | 2 games | Top 2 advance',quarterGroups:'Quarterfinal Groups',semi:'Semifinals',finals:'Finals',seed18:'Group G: Seeds 1/4/5 | Group H: Seeds 2/3/6',seed24:'Preliminary winners are snake-seeded',seedEF:'Group E: A1/B2/C1/D2 | Group F: B1/A2/D1/C2'},
-    ja:{place:'順位',player:'プレイヤー',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'結果',group:'組',round:'第{n}戦',seed:'シード',prelim18:'18強｜3人×6組・各2戦・1位通過',six18:'6強｜3人×2組・各2戦・上位2名通過',prelim24:'24強予選｜3人×8組',groups12:'12強グループ戦',groups16:'16強グループ戦',groups4:'4強予選｜4人戦・2戦（正逆順位）',groups8:'8強予選｜4人×2組・各2戦・上位2名通過',quarterGroups:'ベスト8グループ戦',semi:'準決勝',finals:'決勝',seed18:'G組：シード1／4／5｜H組：2／3／6',seed24:'予選1位を蛇行方式でシード',seedEF:'E組：A1／B2／C1／D2｜F組：B1／A2／D1／C2'}
+    zh:{place:'名次',player:'玩家',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'結果',group:'組',round:'第{n}場',seed:'種子',prelim18:'18強｜6組3人局・各2場・取1',six18:'6強｜2組3人局・各2場・取2',prelim24:'24強初賽｜8組3人局',prelim32:'32強｜8組4人・各2場・取2',round16_32:'16強｜4組4人・各2場・取2',round8_32:'8強｜2組4人・各2場・取2',groups12:'12強分組',groups16:'16強分組',groups4:'4強初賽｜4人局・2場正逆順位',groups8:'8強初賽｜2組4人局・各2場・取2',quarterGroups:'8強分組',semi:'四強',finals:'決賽',seed18:'G組：種子1／4／5　｜　H組：種子2／3／6',seed24:'初賽冠軍蛇形分組',seedEF:'E組：A1／B2／C1／D2　｜　F組：B1／A2／D1／C2'},
+    en:{place:'Place',player:'Player',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'Result',group:'Group',round:'Game {n}',seed:'Seed',prelim18:'Round of 18 | 6 groups of 3 | 2 games | Top 1 advances',six18:'Top 6 | 2 groups of 3 | 2 games | Top 2 advance',prelim24:'Round of 24 | 8 groups of 3',prelim32:'Round of 32 | 8 groups of 4 | 2 games | Top 2',round16_32:'Round of 16 | 4 groups of 4 | 2 games | Top 2',round8_32:'Round of 8 | 2 groups of 4 | 2 games | Top 2',groups12:'Round of 12 Groups',groups16:'Round of 16 Groups',groups4:'Final 4 | 4-player group | 2 games with reversed seating',groups8:'Round of 8 | 2 groups of 4 | 2 games | Top 2 advance',quarterGroups:'Quarterfinal Groups',semi:'Semifinals',finals:'Finals',seed18:'Group G: Seeds 1/4/5 | Group H: Seeds 2/3/6',seed24:'Preliminary winners are snake-seeded',seedEF:'Group E: A1/B2/C1/D2 | Group F: B1/A2/D1/C2'},
+    ja:{place:'順位',player:'プレイヤー',pt:'Pt',vp:'VP',diff:'+/-',n2:'N₂',maxN2:'MaxN₂',r:'R',result:'結果',group:'組',round:'第{n}戦',seed:'シード',prelim18:'18強｜3人×6組・各2戦・1位通過',six18:'6強｜3人×2組・各2戦・上位2名通過',prelim24:'24強予選｜3人×8組',prelim32:'32強｜4人×8組・各2戦・上位2名',round16_32:'16強｜4人×4組・各2戦・上位2名',round8_32:'8強｜4人×2組・各2戦・上位2名',groups12:'12強グループ戦',groups16:'16強グループ戦',groups4:'4強予選｜4人戦・2戦（正逆順位）',groups8:'8強予選｜4人×2組・各2戦・上位2名通過',quarterGroups:'ベスト8グループ戦',semi:'準決勝',finals:'決勝',seed18:'G組：シード1／4／5｜H組：2／3／6',seed24:'予選1位を蛇行方式でシード',seedEF:'E組：A1／B2／C1／D2｜F組：B1／A2／D1／C2'}
   };
   const BL=()=>BRACKET_LABELS[window.gameLanguage||'zh']||BRACKET_LABELS.zh;
   const localizedTournamentPlayerName=p=>p?(p.isAI?(localizedAINameByCode(p.aiCode,window.gameLanguage||'zh')||stripVisibleRankPrefix(p.name||'')):(p.name||'')):'';
@@ -23608,7 +23916,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     const b=BL(),tr=L();
     let html=`<div class="tournament-stage-box"><h4 style="margin:0 0 5px;color:var(--accent);">${escapeHtml(titlePrefix||tr.groupStage)} ${escapeHtml(groupName)}${window.gameLanguage==='en'?'':b.group}</h4><table class="tournament-table" style="width:100%;border-collapse:collapse;font-size:.8rem;text-align:left;"><tr><th>${b.place}</th><th>${b.player}</th><th>${b.pt}</th><th>${b.vp}</th><th>${b.diff}</th><th>${b.n2}</th><th>${b.r}</th></tr>`;
     (players||[]).forEach((p,idx)=>{
-      const qualified=completed&&idx<qualifyCount,snap=statsMode==='prelim'&&p.prelimStats?p.prelimStats:null;
+      const qualified=completed&&idx<qualifyCount,snap=statsMode==='prelim'&&p.prelimStats?p.prelimStats:(statsMode==='round16'&&p.round16Stats?p.round16Stats:null);
       const points=snap?Number(snap.points||0):Number(p.tPoints||0),score=snap?Number(snap.score||0):Number(p.tTotalScore||0),pointDiff=snap?Number(snap.pointDiff||0):Number(p.tPointDiff||0),pressure=snap?Number(snap.maxPressure||0):Number(p.tTotalPressure||0),rounds=snap?Number(snap.rounds||0):Number(p.tTotalRounds||0);
       html+=`<tr style="color:${qualified?'var(--ok)':'var(--text)'}"><td>${idx+1}</td><td>${qualified?'★ ':''}${escapeHtml(localizedTournamentPlayerName(p))}</td><td>${points}</td><td>${score}</td><td>${pointDiff>=0?'+':''}${pointDiff}</td><td>${formatNumber(pressure)}</td><td>${rounds}</td></tr>`;
     });
@@ -23652,6 +23960,17 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const completed=Boolean(t.standings.A),players=(t.standings.A||t.groups.A||[]).slice().sort(sortTournamentPlayers);
       html+=renderTGroupTable('A',players,completed,tr.prelim,2,completed?'prelim':'current');
       html+=bracketHeading(tr.finals)+renderTournamentKnockoutTable('B',['A3','A4'],'bronze',`🥉 B｜${tr.bronzeMatch}`)+renderTournamentKnockoutTable('C',['A1','A2'],'final',`🏆 C｜${tr.finalMatch}`);
+    }else if(t.size===32){
+      html+=bracketHeading(b.prelim32||'32強｜8組4人・各2場・取2');
+      ['A','B','C','D','E','F','G','H'].forEach(g=>{const completed=Boolean(t.standings[g]),players=completed?prelimStandingForGroup(g):(t.groups[g]||[]).slice().sort(sortTournamentPlayers);html+=renderTGroupTable(g,players,completed,tr.prelim,2,completed?'prelim':'current');});
+      html+=bracketHeading(b.round16_32||'16強｜4組4人・各2場・取2');
+      if(t.groups.I){['I','J','K','L'].forEach(g=>{const completed=Boolean(t.standings[g]),players=completed?round16StandingForGroup(g):(t.groups[g]||[]).slice().sort(comparePrelimSeeds);html+=renderTGroupTable(g,players,completed,window.gameLanguage==='en'?'Round of 16':window.gameLanguage==='ja'?'16強':'16強',2,completed?'round16':'current');});}
+      else html+=bracketSeedBox('A1/B2/C1/D2、B1/A2/D1/C2、E1/F2/G1/H2、F1/E2/H1/G2');
+      html+=bracketHeading(b.round8_32||'8強｜2組4人・各2場・取2');
+      if(t.groups.M){['M','N'].forEach(g=>{const players=(t.standings[g]||t.groups[g]||[]).slice().sort(sortTournamentPlayers);html+=renderTGroupTable(g,players,Boolean(t.standings[g]),tr.quarter,2,'current');});}
+      else html+=bracketSeedBox('M＝I1/J2/K1/L2｜N＝J1/I2/L1/K2');
+      html+=bracketHeading(tr.semi)+renderTournamentKnockoutTable('O',['M1','N2'],'semi',`O｜M1 vs N2`)+renderTournamentKnockoutTable('P',['N1','M2'],'semi',`P｜N1 vs M2`);
+      html+=bracketHeading(tr.finals)+renderTournamentKnockoutTable('Q',['L_O','L_P'],'bronze',`🥉 Q｜${tr.bronzeMatch}`)+renderTournamentKnockoutTable('R',['W_O','W_P'],'final',`🏆 R｜${tr.finalMatch}`);
     }else if(t.size===18){
       html+=bracketHeading(b.prelim18);
       ['A','B','C','D','E','F'].forEach(g=>{const completed=Boolean(t.standings[g]),players=(t.standings[g]||t.groups[g]||[]).slice().sort(sortTournamentPlayers);html+=renderTGroupTable(g,players,completed,tr.prelim,1,completed?'prelim':'current');});
@@ -23693,7 +24012,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       line2=lang==='en'?`${next.need} EXP to ${next.label}.`:lang==='ja'?`${next.label}まであと<b>${next.need}</b> EXP。`:`距${next.label.replace(/\s+/g,'')}還差<b>${next.need}</b> EXP。`;
     }else if(next.kind==='promotion'){
       const name=boss?(localizedAINameByCode(boss.code,lang)||boss.name):'-';
-      line2=lang==='en'?`Gatekeeper unlocked: ${escapeHtml(name)}. Win 3 straight to level up.`:lang==='ja'?`関門AI解放：${escapeHtml(name)}。3連勝で昇格。`:`關主AI已解鎖：${escapeHtml(name)}。3連勝即可升級。`;
+      line2=lang==='en'?`Gatekeeper unlocked: ${escapeHtml(name)}. Win a best-of-five (first to 3) to level up.`:lang==='ja'?`関門AI解放：${escapeHtml(name)}。5戦3勝で昇格。`:`關主AI已解鎖：${escapeHtml(name)}。5戰3勝即可升級。`;
     }else line2=lang==='en'?'Maximum rank reached.':lang==='ja'?'最高階級に到達。':'已達最高階級。';
     return `<div class="career-rank-card career-rank-card-compact"><div class="career-rank-line">${line1}</div><div class="career-rank-line">${line2}</div></div>`;
   };
@@ -23704,7 +24023,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     else if(next.kind==='promotion') progressCopy=lang==='en'?'Gold reached; gatekeeper challenge unlocked':lang==='ja'?'金到達；関門AI挑戦を解放':'已達金級；關主AI挑戰已解鎖';
     else progressCopy=lang==='en'?'Maximum rank':lang==='ja'?'最高階級':'最高階級';
     const bossCopy=boss?(state.rings>=3?(lang==='en'?`Gatekeeper unlocked: ${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`:lang==='ja'?`関門AI解放：${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`:`關主AI已解鎖：${escapeHtml(localizedAINameByCode(boss.code,lang)||boss.name)}`):(lang==='en'?`Gatekeeper unlocks at ${romanLevel(state.level)} Gold`:lang==='ja'?`関門AIは${romanLevel(state.level)}金で解放`:`關主AI於${romanLevel(state.level)}金級解鎖`)):'';
-    return `<div class="career-progress-card"><b>${lang==='en'?'Player Level':lang==='ja'?'プレイヤーレベル':'玩家等級'} ${badge}</b><br><b>${state.totalExp} EXP</b>｜${progressCopy}<div class="career-progress-bar"><i style="--career-pct:${Math.min(100,(state.rings/3)*100).toFixed(1)}%"></i></div>${lang==='en'?'Available AI':lang==='ja'?'解放AI':'已解鎖AI'} ${state.aiCount}/27${bossCopy?`<br>${bossCopy}`:''}<br>${tour}</div>`;
+    return `<div class="career-progress-card"><b>${lang==='en'?'Player Level':lang==='ja'?'プレイヤーレベル':'玩家等級'} ${badge}</b><br><b>${state.totalExp} EXP</b>｜${progressCopy}<div class="career-progress-bar"><i style="--career-pct:${Math.min(100,(state.rings/3)*100).toFixed(1)}%"></i></div>${lang==='en'?'Available AI':lang==='ja'?'解放AI':'已解鎖AI'} ${state.aiCount}/${AI_ORDER.length}${bossCopy?`<br>${bossCopy}`:''}<br>${tour}</div>`;
   };
 
   // Unified EXP leaderboard, including AI EXP multiplied by AI level.
@@ -23901,39 +24220,40 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   TOURNAMENT_PODIUM_POINTS[16]=[160,100,50];
   TOURNAMENT_PODIUM_POINTS[18]=[180,120,60];
   TOURNAMENT_PODIUM_POINTS[24]=[240,160,80];
+  TOURNAMENT_PODIUM_POINTS[32]=[320,200,100];
 
   const LANGNAME={zh:'中文',en:'English',ja:'日本語'};
   const T={
     zh:{
-      title:'深海洞潛',language:'語言',languageDesc:'目前：{lang}',tutorial:'教學',tutorialDesc:'教學與快速局',ranking:'排行',rankingDesc:'玩家與AI排行',standard:'一般',standardDesc:'2–5人・最多3局',promotion:'升級',promotionDesc:'關主與AI練功',tournament:'錦標',tournamentDesc:'4／8／12／16／18／24強',back:'返回',
+      title:'深海洞潛',language:'語言',languageDesc:'目前：{lang}',tutorial:'教學',tutorialDesc:'教學與快速局',ranking:'排行',rankingDesc:'玩家與AI排行',standard:'一般',standardDesc:'2–5人・最多3局',promotion:'升級',promotionDesc:'關主與AI練功',tournament:'錦標',tournamentDesc:'4／8／12／16／18／24／32強',back:'返回',
       langTitle:'語言',langIntro:'選擇遊戲顯示語言。首頁、模式簡介與相關選項會立即切換。',currentLang:'目前語言',
       quickTitle:'教學／快速局',quickIntro:'先完成6輪教學，或直接選擇1～5人快速局。快速局為單局體驗，牌組、順位與AI對手由系統隨機。',quickLabel:'快速局',lesson:'教學',lessonDesc:'6輪固定流程，學習五種核心行動。',one:'1人',oneDesc:'單人規則｜隨機2色。',nDesc:n=>`${n}人快速局｜${n-1}名隨機AI。`,
       lessonTitle:'教學局',lessonIntro:'6輪固定教學｜正常2人局｜你是玩家B',lessonBody:'6輪內學完五種行動。玩家A由教學AI依固定腳本示範；你親手完成下潛、探勘、減壓、佈線、上浮，以及空手下潛與事件處理。牌序與事件固定，錯誤操作會被鎖住。第3輪 Y5「神秘氣室」會練習免費減壓與免費佈線。',startLesson:'開始教學',
       participation:'參戰／觀戰',play:'參戰',spectate:'觀戰',playDesc:'你親自參加比賽。',spectateDesc:'全席由AI進行，你只觀看比賽。',
-      standardTitle:'一般賽',standardIntro:'2–5人，最多3局。目標Pt在2人局為4Pt，其他為3Pt；先獲得目標Pt者獲勝，同Pt共享勝利。勝利玩家獲得「人數 × 10」基礎EXP，實得EXP再 × 玩家等級。',choosePlayers:'選擇人數',startStandard:'開始一般賽',
-      promotionTitle:'升級戰',promotionIntro:'2人，最多3局。每贏1局獲得「玩家等級 × 10 EXP」；每輸1局則本次挑戰立即結束。一般AI與關主AI使用不同顏色；只有對決目前關主AI並連贏3局，玩家等級才提升1級。其他已解鎖AI可重複挑戰，作為練功房。',gatekeeper:'關主AI',normalAI:'一般AI',locked:'未解鎖',challenged:'已挑戰',selected:'已選擇',readyBoss:'可升級關主',practice:'練功',startChallenge:'開始挑戰',needGold:'需達目前等級金環才可透過關主升級。',
-      tournamentTitle:'錦標戰',tournamentIntro:'4強賽先進行2局4人局正逆順位，前2名進冠軍戰、後2名進季軍戰；其他錦標的初賽和複賽每場2局正逆順位，採3或4人賽並取前1或2名晉級，四強和決賽各1局2人賽。',games:'局',req:'解鎖',lockedTournament:'尚未解鎖',
+      standardTitle:'一般賽',standardIntro:'2–5人，最多3局。目標Pt在2人局為4Pt，其他為3Pt；先獲得目標Pt者獲勝，同Pt共享勝利。系列勝者獲得「人數 × 10」基礎EXP，系列敗者（真人與AI皆同）獲得其50%；實得EXP再 × 各自等級。',choosePlayers:'選擇人數',startStandard:'開始一般賽',
+      promotionTitle:'升級戰',promotionIntro:'2人，5戰3勝制，任一方先取得3勝即結束，最多5局。每贏1局獲得「對手AI等級 × 10 EXP」。一般AI與關主AI使用不同顏色；只有對決目前關主AI並取得系列3勝，玩家等級才提升1級。其他已解鎖AI可重複挑戰，作為練功房。',gatekeeper:'關主AI',normalAI:'一般AI',locked:'未解鎖',challenged:'已挑戰',failedChallenge:'挑戰失敗',selected:'已選擇',readyBoss:'可升級關主',practice:'練功',startChallenge:'開始挑戰',needGold:'需達目前等級金環才可透過關主升級。',
+      tournamentTitle:'錦標戰',tournamentIntro:'4強賽先進行2局4人局正逆順位，前2名進冠軍戰、後2名進季軍戰；32強賽為8組4人各2局取前2進16強，再以4組4人各2局取前2進8強、2組4人各2局取前2進四強，四強／冠軍／季軍戰各1局。其他錦標依原賽制進行。',games:'局',req:'解鎖',lockedTournament:'尚未解鎖',
       profile:'修改玩家資料',refresh:'重新整理',save:'儲存',profileTitle:'玩家資料',profileIntro:'修改全球唯一玩家名稱、勝利宣言與戰敗怒吼。',name:'玩家稱呼',victory:'🏆 勝利宣言',defeat:'💢 戰敗怒吼',saving:'正在儲存…',saved:'已儲存。'
     },
     en:{
-      title:'Deep Dark Dive',language:'Language',languageDesc:'Current: {lang}',tutorial:'Tutorial',tutorialDesc:'Tutorial & quick games',ranking:'Ranking',rankingDesc:'Player & AI rankings',standard:'Standard',standardDesc:'2–5 players · up to 3 games',promotion:'Promotion',promotionDesc:'Gatekeeper & AI training',tournament:'Tournament',tournamentDesc:'Top 4 / 8 / 12 / 16 / 18 / 24',back:'Back',
+      title:'Deep Dark Dive',language:'Language',languageDesc:'Current: {lang}',tutorial:'Tutorial',tutorialDesc:'Tutorial & quick games',ranking:'Ranking',rankingDesc:'Player & AI rankings',standard:'Standard',standardDesc:'2–5 players · up to 3 games',promotion:'Promotion',promotionDesc:'Gatekeeper & AI training',tournament:'Tournament',tournamentDesc:'Top 4 / 8 / 12 / 16 / 18 / 24 / 32 / 32',back:'Back',
       langTitle:'Language',langIntro:'Choose the display language. The home screen, mode descriptions, and options update immediately.',currentLang:'Current language',
       quickTitle:'Tutorial / Quick Game',quickIntro:'Play the fixed 6-round tutorial, or jump into a 1–5 player quick game. Quick games are single matches with random deck colors, seating, and AI opponents.',quickLabel:'Quick Game',lesson:'Tutorial',lessonDesc:'A fixed 6-round lesson covering all five core actions.',one:'1 Player',oneDesc:'Solo rules · 2 random colors.',nDesc:n=>`${n}-player quick game · ${n-1} random AI.`,
       lessonTitle:'Tutorial',lessonIntro:'Fixed 6-round tutorial · normal 2-player rules · you are Player B',lessonBody:'Learn all five core actions in 6 rounds. Tutorial AI Player A follows a fixed script while you perform Dive, Explore, Decompress, Lay Lines, Surface, empty-hand Dive, and event resolution. Card order and events are fixed and invalid actions are locked. Round 3 uses Y5 “Mysterious Air Chamber” to practice free Decompress and Lay Lines.',startLesson:'Start Tutorial',
       participation:'Play / Spectate',play:'Play',spectate:'Spectate',playDesc:'You take part in the match.',spectateDesc:'Every seat is AI-controlled while you watch.',
-      standardTitle:'Standard Match',standardIntro:'2–5 players, up to 3 games. The target is 4 Pt in a 2-player match and 3 Pt otherwise. The first to reach the target wins; tied Pt share the win. Winners earn base EXP equal to player count × 10, then actual EXP is multiplied by player level.',choosePlayers:'Players',startStandard:'Start Standard Match',
-      promotionTitle:'Promotion Challenge',promotionIntro:'2 players, up to 3 games. Each win earns player level × 10 EXP; one loss immediately ends the attempt. Normal AI and the current gatekeeper use different colors. Only three consecutive wins against the current gatekeeper increase your level by 1. Any other unlocked AI may be challenged repeatedly for training.',gatekeeper:'Gatekeeper',normalAI:'Normal AI',locked:'Locked',challenged:'Challenged',selected:'Selected',readyBoss:'Promotion Gatekeeper',practice:'Training',startChallenge:'Start Challenge',needGold:'Reach Gold in your current level before the gatekeeper can promote you.',
-      tournamentTitle:'Tournament',tournamentIntro:'The Final 4 starts with two 4-player games using normal and reversed seating; the top 2 play the final and the bottom 2 play the third-place match. Other tournaments use two-game 3- or 4-player preliminary stages, then single 2-player semifinals and finals.',games:'games',req:'Unlock',lockedTournament:'Locked',
+      standardTitle:'Standard Match',standardIntro:'2–5 players, up to 3 games. The target is 4 Pt in a 2-player match and 3 Pt otherwise. The first to reach the target wins; tied Pt share the win. Series winners earn base EXP equal to player count × 10; series losers, human or AI, earn 50% of that base. Actual EXP is then multiplied by each participant’s level.',choosePlayers:'Players',startStandard:'Start Standard Match',
+      promotionTitle:'Promotion Challenge',promotionIntro:'2 players, best of five: the first side to 3 wins takes the series, with at most 5 games. Each game win earns opponent AI level × 10 EXP. Normal AI and the current gatekeeper use different colors. Only winning the series against the current gatekeeper increases your level by 1. Any other unlocked AI may be challenged repeatedly for training.',gatekeeper:'Gatekeeper',normalAI:'Normal AI',locked:'Locked',challenged:'Challenged',failedChallenge:'Challenge Failed',selected:'Selected',readyBoss:'Promotion Gatekeeper',practice:'Training',startChallenge:'Start Challenge',needGold:'Reach Gold in your current level before the gatekeeper can promote you.',
+      tournamentTitle:'Tournament',tournamentIntro:'The Final 4 starts with two 4-player games. The 32-player event uses 8 groups of 4, then 4 groups of 4 in the Round of 16, then 2 groups of 4 in the Round of 8; every group stage plays 2 games and advances the top 2. Semifinals, final, and third-place match are single games.',games:'games',req:'Unlock',lockedTournament:'Locked',
       profile:'Edit Player Profile',refresh:'Refresh',save:'Save',profileTitle:'Player Profile',profileIntro:'Edit your globally unique player name, victory quote, and defeat quote.',name:'Player Name',victory:'🏆 Victory Quote',defeat:'💢 Defeat Quote',saving:'Saving…',saved:'Saved.'
     },
     ja:{
-      title:'ディープ・ダーク・ダイブ',language:'言語',languageDesc:'現在：{lang}',tutorial:'チュートリアル',tutorialDesc:'チュートリアル＋クイック戦',ranking:'ランキング',rankingDesc:'プレイヤーとAIの順位',standard:'通常戦',standardDesc:'2～5人・最大3局',promotion:'昇格',promotionDesc:'関門AI＋練習',tournament:'トーナメント',tournamentDesc:'4／8／12／16／18／24強',back:'戻る',
+      title:'ディープ・ダーク・ダイブ',language:'言語',languageDesc:'現在：{lang}',tutorial:'チュートリアル',tutorialDesc:'チュートリアル＋クイック戦',ranking:'ランキング',rankingDesc:'プレイヤーとAIの順位',standard:'通常戦',standardDesc:'2～5人・最大3局',promotion:'昇格',promotionDesc:'関門AI＋練習',tournament:'トーナメント',tournamentDesc:'4／8／12／16／18／24／32強',back:'戻る',
       langTitle:'言語',langIntro:'表示言語を選択してください。ホーム、モード説明、各選択肢がすぐに切り替わります。',currentLang:'現在の言語',
       quickTitle:'チュートリアル／クイック戦',quickIntro:'固定6ラウンドのチュートリアル、または1～5人のクイック戦を選びます。クイック戦は1局のみで、カード色・席順・AI対戦相手はランダムです。',quickLabel:'クイック戦',lesson:'チュートリアル',lessonDesc:'固定6ラウンドで5つの基本アクションを学びます。',one:'1人',oneDesc:'ソロルール｜ランダム2色。',nDesc:n=>`${n}人クイック戦｜ランダムAI ${n-1}体。`,
       lessonTitle:'チュートリアル',lessonIntro:'固定6ラウンド｜通常2人ルール｜あなたはプレイヤーB',lessonBody:'6ラウンドで5つの基本アクションを学びます。プレイヤーAはチュートリアルAIが固定手順で行動し、あなたは潜水・探索・減圧・ライン設置・浮上、手札0枚時の潜水、イベント処理を実行します。カード順とイベントは固定で、誤った操作はロックされます。第3ラウンドのY5「神秘の気室」で無料減圧と無料ライン設置も練習します。',startLesson:'チュートリアル開始',
       participation:'参戦／観戦',play:'参戦',spectate:'観戦',playDesc:'自分で試合に参加します。',spectateDesc:'全席をAIが操作し、試合を観戦します。',
-      standardTitle:'通常戦',standardIntro:'2～5人、最大3局。目標Ptは2人戦が4Pt、その他は3Pt。先に目標Ptへ到達したプレイヤーが勝利し、同Ptは同率優勝です。勝者は「人数 × 10」の基礎EXPを獲得し、実獲得EXPはさらにプレイヤーレベル倍率を掛けます。',choosePlayers:'人数',startStandard:'通常戦開始',
-      promotionTitle:'昇格戦',promotionIntro:'2人戦、最大3局。1勝ごとに「プレイヤーレベル × 10 EXP」を獲得し、1敗するとその挑戦は終了します。通常AIと現在の関門AIは別色で表示されます。現在の関門AIに3連勝した場合のみレベルが1上昇します。その他の解放済みAIは何度でも練習相手として挑戦できます。',gatekeeper:'関門AI',normalAI:'通常AI',locked:'未解放',challenged:'挑戦済み',selected:'選択中',readyBoss:'昇格関門',practice:'練習',startChallenge:'挑戦開始',needGold:'現在レベルの金環に到達すると、関門AI撃破で昇格できます。',
+      standardTitle:'通常戦',standardIntro:'2～5人、最大3局。目標Ptは2人戦が4Pt、その他は3Pt。同Ptは同率優勝です。シリーズ勝者は「人数 × 10」の基礎EXP、敗者（人間・AI共通）はその50%を獲得し、実獲得EXPは各参加者のレベル倍率を掛けます。',choosePlayers:'人数',startStandard:'通常戦開始',
+      promotionTitle:'昇格戦',promotionIntro:'2人戦、5戦3勝制。先に3勝した側がシリーズ勝利となり、最大5局です。1勝ごとに「対戦AIレベル × 10 EXP」を獲得します。通常AIと現在の関門AIは別色で表示されます。現在の関門AIとのシリーズで3勝した場合のみレベルが1上昇します。その他の解放済みAIは何度でも練習相手として挑戦できます。',gatekeeper:'関門AI',normalAI:'通常AI',locked:'未解放',challenged:'挑戦済み',failedChallenge:'挑戦失敗',selected:'選択中',readyBoss:'昇格関門',practice:'練習',startChallenge:'挑戦開始',needGold:'現在レベルの金環に到達すると、関門AI撃破で昇格できます。',
       tournamentTitle:'トーナメント戦',tournamentIntro:'4強戦は4人戦を正逆順位で2局行い、上位2名が決勝戦、下位2名が3位決定戦へ進みます。その他の大会は3人または4人の予選・二次予選を各2局行い、その後の準決勝と決勝は各1局の2人戦です。',games:'局',req:'解放',lockedTournament:'未解放',
       profile:'プレイヤー情報変更',refresh:'更新',save:'保存',profileTitle:'プレイヤー情報',profileIntro:'世界で一意のプレイヤー名、勝利宣言、敗北時の台詞を変更します。',name:'プレイヤー名',victory:'🏆 勝利宣言',defeat:'💢 敗北の叫び',saving:'保存中…',saved:'保存しました。'
     }
@@ -24012,13 +24332,13 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   }
   function standardPage(preserve=false){
     view='standard';window.__dddV174View=view;const t=tr();modalBase(t.standardTitle,t.standardIntro);
-    els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}<div class="ddd-v174-choice-grid">${[2,3,4,5].map(n=>`<button class="ddd-v174-choice" type="button" data-v174-standard="${n}"><b>${n}${lang()==='en'?' Players':lang()==='ja'?'人':'人'}</b><small>${n===2?'4 Pt':'3 Pt'}｜${n*10} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}</small></button>`).join('')}</div></div>`;
+    els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}<div class="ddd-v174-choice-grid">${[2,3,4,5].map(n=>`<button class="ddd-v174-choice" type="button" data-v174-standard="${n}"><b>${n}${lang()==='en'?' Players':lang()==='ja'?'人':'人'}</b><small>${n===2?'4 Pt':'3 Pt'}｜${lang()==='en'?'W/L ':lang()==='ja'?'勝/敗 ':'勝/敗 '}${n*10}/${n*5} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}</small></button>`).join('')}</div></div>`;
     els.modalActions.append(backButton());bindParticipation();document.querySelectorAll('[data-v174-standard]').forEach(b=>b.addEventListener('click',()=>startStandard(Number(b.dataset.v174Standard))));
   }
 
   function tournamentPage(preserve=false){
     view='tournament';window.__dddV174View=view;primeTournamentRecordedMusic();const t=tr(),level=careerPlayerLevel(careerCurrentProfile());modalBase(t.tournamentTitle,t.tournamentIntro);
-    const data=[{size:4,games:3,award:'40/20/10',level:2},{size:8,games:4,award:'80/50/30',level:3},{size:12,games:6,award:'120/80/40',level:4},{size:16,games:6,award:'160/100/50',level:5},{size:18,games:6,award:'180/120/60',level:6},{size:24,games:6,award:'240/160/80',level:8}];
+    const data=[{size:4,games:3,award:'40/20/10',level:2},{size:8,games:4,award:'80/50/30',level:3},{size:12,games:6,award:'120/80/40',level:4},{size:16,games:6,award:'160/100/50',level:5},{size:18,games:6,award:'180/120/60',level:6},{size:24,games:6,award:'240/160/80',level:8},{size:32,games:8,award:'320/200/100',level:10}];
     els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}<div class="ddd-v174-tournament-grid">${data.map(x=>`<button type="button" class="ddd-v174-tournament-option" data-v174-tournament="${x.size}" ${level<x.level?'disabled':''}><span><b>${x.size}${lang()==='en'?'-Player Tournament':lang()==='ja'?'強戦':'強賽'}｜${x.games}${t.games}</b><small>${x.award} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}</small></span><span class="req">${level<x.level?'🔒 ':''}${lang()==='en'?'Level ':''}${ROMAN_LEVELS[x.level-1]}${lang()==='ja'?'級':lang()==='zh'?'級':''}</span></button>`).join('')}</div></div>`;
     els.modalActions.append(backButton());bindParticipation();document.querySelectorAll('[data-v174-tournament]').forEach(b=>b.addEventListener('click',()=>{
       const size=Number(b.dataset.v174Tournament);if(!careerTournamentUnlocked(size))return;
@@ -24030,14 +24350,23 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   showMergedSetup=function(mode='league',initial=false,preserve=false){const normalized=String(mode||'league').startsWith('tournament')?'tournament':String(mode||'league');return normalized==='tournament'?tournamentPage(Boolean(preserve)):standardPage(Boolean(preserve));};
 
   showPromotionBattleModal=function(initial=false){
-    view='promotion';window.__dddV174View=view;const t=tr(),rec=careerCurrentProfile(),currentLevel=careerPlayerLevel(rec),target=careerPromotionTarget(rec),eligible=careerPromotionEligible(rec),history=new Set((rec.promotionHistory||[]).map(x=>Number(x.targetCode))),unlocked=new Set(careerUnlockedAICodes().map(Number));
+    view='promotion';window.__dddV174View=view;const t=tr(),rec=careerCurrentProfile(),currentLevel=careerPlayerLevel(rec),target=careerPromotionTarget(rec),eligible=careerPromotionEligible(rec),unlocked=new Set(careerUnlockedAICodes().map(Number));
+    const latestPromotionAttempt=new Map();
+    (rec.promotionHistory||[]).forEach(item=>{
+      const code=Number(item?.targetCode);if(!Number.isFinite(code))return;
+      const prev=latestPromotionAttempt.get(code);
+      if(!prev||Number(item?.at||0)>=Number(prev?.at||0)) latestPromotionAttempt.set(code,item);
+    });
     if(selectedPromotionAI==null||!unlocked.has(Number(selectedPromotionAI))) selectedPromotionAI=target&&unlocked.has(Number(target.code))?Number(target.code):Number(careerUnlockedAICodes()[0]||AI_ORDER.at(-1));
     modalBase(t.promotionTitle,t.promotionIntro);
-    const cards=AI_LADDER_WEAK_TO_STRONG.map(meta=>{const open=unlocked.has(Number(meta.code)),gate=Boolean(target&&Number(target.code)===Number(meta.code)),selected=Number(selectedPromotionAI)===Number(meta.code),challenged=history.has(Number(meta.code));const name=localizedAINameByCode(meta.code,lang())||meta.name;const sub=!open?t.locked:gate?t.gatekeeper:t.normalAI;return `<button type="button" class="ddd-v174-ai ${gate?'gatekeeper':''} ${selected?'selected':''}" data-v174-ai="${meta.code}" ${open?'':'disabled'}><b>${meta.tier} ${escapeHtml(name)}</b><small>${sub}${challenged?`｜${t.challenged}`:''}</small></button>`;}).join('');
-    els.modalBody.innerHTML=`<div class="ddd-v174-page">${eligible?'':`<div class="ddd-v174-note"><small>${t.needGold}</small></div>`}<div class="ddd-v174-ai-grid">${cards}</div></div>`;
+    const cards=AI_LADDER_WEAK_TO_STRONG.map(meta=>{const open=unlocked.has(Number(meta.code)),gate=Boolean(target&&Number(target.code)===Number(meta.code)),selected=Number(selectedPromotionAI)===Number(meta.code),attempt=latestPromotionAttempt.get(Number(meta.code)),challenged=Boolean(attempt),failed=Boolean(attempt&&attempt.cleared===false);const name=localizedAINameByCode(meta.code,lang())||meta.name;const sub=!open?t.locked:gate?t.gatekeeper:t.normalAI;const attemptLabel=failed?t.failedChallenge:(challenged?t.challenged:'');return `<button type="button" class="ddd-v174-ai ${gate?'gatekeeper':''} ${selected?'selected':''}" data-v174-ai="${meta.code}" ${open?'':'disabled'}><b>${meta.tier} ${escapeHtml(name)}</b><small>${sub}${attemptLabel?`｜${attemptLabel}`:''}</small></button>`;}).join('');
+    const maxTierNote=currentLevel>=PLAYER_RANK_MAX
+      ? (lang()==='en'?'Maximum Level X reached. You may continue challenging unlocked AI for training.':lang()==='ja'?'最高のX級に到達済みです。解放済みAIには引き続き練習挑戦できます。':'已達最高 X級；仍可繼續挑戰已解鎖 AI 練功。')
+      : t.needGold;
+    els.modalBody.innerHTML=`<div class="ddd-v174-page">${eligible?'':`<div class="ddd-v174-note"><small>${maxTierNote}</small></div>`}<div class="ddd-v174-ai-grid">${cards}</div></div>`;
     const updateStart=()=>{els.modalActions.innerHTML='';els.modalActions.append(backButton());const meta=aiLadderMeta(Number(selectedPromotionAI)),name=localizedAINameByCode(Number(selectedPromotionAI),lang())||meta?.name||`AI${selectedPromotionAI}`;const isGate=Boolean(target&&Number(target.code)===Number(selectedPromotionAI)&&eligible);els.modalActions.append(makeButton(`${t.startChallenge}｜${name}${isGate?` (${t.readyBoss})`:''}`,'btn primary',()=>{
       const code=Number(selectedPromotionAI),gatekeeper=Boolean(target&&Number(target.code)===code&&careerPromotionEligible(careerCurrentProfile()));
-      startMatch({playerCount:2,colors:randomColorSelection(2),aiCodes:[code],seatControllers:['human',code],mode:'league',tournamentSize:8,tournamentHumanAI:null,normalHumanAI:null,humanDifficulty:'easy',enforceCareerUnlock:true,promotionBattle:true,promotionTargetCode:code,promotionStartLevel:currentLevel,promotionStreak:0,promotionThreeWins:false,promotionGatekeeper:gatekeeper});closeModal();
+      startMatch({playerCount:2,colors:randomColorSelection(2),aiCodes:[code],seatControllers:['human',code],mode:'league',tournamentSize:8,tournamentHumanAI:null,normalHumanAI:null,humanDifficulty:'easy',enforceCareerUnlock:true,promotionBattle:true,promotionTargetCode:code,promotionStartLevel:currentLevel,promotionStreak:0,promotionSeriesWins:0,promotionSeriesLosses:0,promotionThreeWins:false,promotionGatekeeper:gatekeeper});closeModal();
     }));};
     document.querySelectorAll('[data-v174-ai]').forEach(b=>b.addEventListener('click',()=>{selectedPromotionAI=Number(b.dataset.v174Ai);document.querySelectorAll('[data-v174-ai]').forEach(x=>x.classList.toggle('selected',Number(x.dataset.v174Ai)===selectedPromotionAI));updateStart();}));updateStart();
   };
@@ -24559,4 +24888,552 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 })();
 </script>
 
+
+<!-- v193: corrected live win prediction endgame weighting; nonlinear match-point threat + low-N2 penalty scaled by points-to-win -->
+<!-- v192: two-player live AI win probability estimator using score, N2, hand potential, remaining deck composition and turn order -->
+<style id="ddd-v192-win-prediction-style">
+  #dddWinPrediction{display:none;margin:0 0 8px;padding:9px 10px;border:1px solid rgba(255,255,255,.16);border-radius:10px;background:rgba(2,29,49,.72)}
+  #dddWinPrediction.open{display:block}
+  .ddd-win-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;font-size:.72rem;color:var(--muted)}
+  .ddd-win-head strong{color:#fff;font-size:.78rem}
+  .ddd-win-row{display:grid;grid-template-columns:minmax(72px,1fr) minmax(120px,2.2fr) 48px;gap:7px;align-items:center;margin:5px 0;font-size:.72rem}
+  .ddd-win-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}
+  .ddd-win-track{height:10px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+  .ddd-win-fill{height:100%;width:50%;border-radius:999px;background:linear-gradient(90deg,#4CBFB0,#F0CC61);transition:width .24s ease}
+  .ddd-win-pct{text-align:right;font-weight:900;color:#fff}
+  .ddd-win-detail{margin-top:6px;font-size:.66rem;line-height:1.45;color:var(--muted)}
+</style>
+<script id="ddd-v193-win-prediction">
+(() => {
+  const VERSION = "v193";
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const sigmoid=x=>1/(1+Math.exp(-x));
+
+  function predictionModeAllowed(){
+    if(typeof game==='undefined' || game.gameOver || game.simulationMode) return false;
+    if(!Array.isArray(game.players) || game.players.length!==2) return false;
+    if(typeof isTutorialMode==='function' && isTutorialMode()) return false;
+        if(typeof isMaldivesMission==='function' && isMaldivesMission()) return false;
+    return true;
+  }
+
+  function ensurePanel(){
+    let box=document.getElementById('dddWinPrediction');
+    if(box) return box;
+    const log=document.getElementById('logList');
+    if(!log || !log.parentElement) return null;
+    box=document.createElement('div');
+    box.id='dddWinPrediction';
+    box.innerHTML=`<div class="ddd-win-head"><strong>AI 勝率預測</strong><span>即時局面估計</span></div><div class="ddd-win-body"></div><div class="ddd-win-detail"></div>`;
+    log.parentElement.insertBefore(box,log);
+    return box;
+  }
+
+  function bestImmediateScore(player){
+    try{
+      const s=typeof generateSurfaceActions==='function'?generateSurfaceActions(player):[];
+      const w=typeof generateWireActions==='function'?generateWireActions(player):[];
+      return [...s,...w].reduce((m,a)=>Math.max(m,Number(a?.score||0)),0);
+    }catch(_){return 0;}
+  }
+
+  function handStructure(player){
+    const hand=Array.isArray(player.hand)?player.hand:[];
+    if(!hand.length) return {pair:0,run:0,diversity:0,outs:0};
+    const byValue=new Map();
+    for(const c of hand) byValue.set(Number(c.value), (byValue.get(Number(c.value))||0)+1);
+    let pair=0;
+    for(const n of byValue.values()) pair=Math.max(pair,Math.max(0,n-1));
+    const values=[...byValue.keys()].sort((a,b)=>a-b);
+    let run=1,bestRun=1;
+    for(let i=1;i<values.length;i++){
+      if(values[i]===values[i-1]+1){run++;bestRun=Math.max(bestRun,run);} else if(values[i]!==values[i-1]) run=1;
+    }
+    const colors=new Set(hand.map(c=>c.color)).size;
+    const diversity=hand.length?colors/Math.min(hand.length,5):0;
+    return {pair,run:bestRun,diversity,outs:0};
+  }
+
+  function deckCompatibility(player){
+    const deck=Array.isArray(game.deck)?game.deck:[];
+    const hand=Array.isArray(player.hand)?player.hand:[];
+    if(!deck.length || !hand.length) return 0;
+    const vals=new Set(hand.map(c=>Number(c.value)));
+    let useful=0;
+    for(const c of deck){
+      const v=Number(c.value);
+      let u=0;
+      if(vals.has(v)) u+=1.15; // wire help
+      if(vals.has(v-1)||vals.has(v+1)) u+=1.0; // surface help
+      if(hand.some(h=>h.color===c.color)) u+=0.18;
+      useful+=Math.min(1.6,u);
+    }
+    return useful/deck.length;
+  }
+
+  function turnUrgency(player){
+    const idx=game.players.findIndex(p=>p.id===player.id);
+    const cur=Number(game.currentIndex||0);
+    if(idx<0) return 0;
+    const dist=(idx-cur+game.players.length)%game.players.length;
+    return dist===0?1:(dist===1?0.35:0);
+  }
+
+  function evaluate(player){
+    const target=Math.max(1,Number(game.targetScore||16));
+    const score=Number(player.score||0);
+    const maxN=Math.max(0,Number(player.maxPressure||0));
+    const nNow=typeof pressure==='function'?Math.max(0,Number(pressure(player)||0)):0;
+    const margin=maxN-nNow;
+    const immediate=bestImmediateScore(player);
+    const structure=handStructure(player);
+    const deckFit=deckCompatibility(player);
+    const turn=turnUrgency(player);
+    const progress=clamp(score/target,0,1.4);
+    const endgame=clamp((progress-.45)/.55,0,1);
+    const need=Math.max(0,target-score);
+
+    // v193: endgame is nonlinear. Being 1–3 VP from victory is a real match-point threat,
+    // while low MaxN₂ still matters but should not erase a near-win by itself.
+    let value=0;
+    value += progress*5.2;
+    value += clamp((maxN-8)/6,-1,1.2)*1.15;
+    value += clamp(margin/8,-1,1.5)*0.65;
+    value += clamp(immediate/5,0,1.4)*(1.4+2.2*endgame);
+    value += clamp(structure.pair/2,0,1.5)*0.42;
+    value += clamp((structure.run-1)/3,0,1.5)*0.52;
+    value += structure.diversity*0.18;
+    value += deckFit*0.7;
+    value += turn*(0.18+0.9*endgame);
+
+    // A scoring action that can finish the game is still the strongest tactical signal.
+    if(immediate>=need && need>0) value += 2.8 + 2.2*endgame;
+
+    // Nonlinear match-point pressure. Linear score progress alone undervalued 15/16, 14/16, etc.
+    let finishThreat=0;
+    if(need===1) finishThreat=4.2;
+    else if(need===2) finishThreat=2.4;
+    else if(need===3) finishThreat=1.2;
+    else if(need===4) finishThreat=0.55;
+    value += finishThreat;
+
+    if(score>=target) value += 8;
+
+    // Low-N₂ is dangerous, but its penalty is reduced when only 1–3 VP remain.
+    // Elimination itself is never relieved.
+    const lowNScale = need===1 ? 0.35 : need===2 ? 0.55 : need===3 ? 0.75 : 1;
+    let lowNPenalty=0;
+    if(player.eliminated) lowNPenalty=9;
+    else if(maxN<=3) lowNPenalty=9*lowNScale;
+    else if(maxN===4) lowNPenalty=2.8*lowNScale;
+    else if(maxN<=6) lowNPenalty=1.25*lowNScale;
+    value -= lowNPenalty;
+
+    return {value,score,maxN,nNow,margin,immediate,deckFit,turn,need,finishThreat,lowNPenalty};
+  }
+
+  function nameOf(player){
+    try{return player.isAI&&window.dddAIName?window.dddAIName(player,window.gameLanguage||'zh'):String(player.name||'玩家');}
+    catch(_){return String(player.name||'玩家');}
+  }
+
+  function update(){
+    const box=ensurePanel();
+    if(!box) return;
+    if(!predictionModeAllowed()) { box.classList.remove('open'); return; }
+    const [a,b]=game.players;
+    const ea=evaluate(a), eb=evaluate(b);
+    const diff=ea.value-eb.value;
+    let pa=sigmoid(diff/1.45);
+    // Keep normal non-terminal estimates away from fake certainty.
+    if(!game.gameOver && !a.eliminated && !b.eliminated && a.score<game.targetScore && b.score<game.targetScore) pa=clamp(pa,.03,.97);
+    const pb=1-pa;
+    const rows=[[a,pa,ea],[b,pb,eb]];
+    box.querySelector('.ddd-win-body').innerHTML=rows.map(([p,prob,e])=>{
+      const nm=typeof escapeHtml==='function'?escapeHtml(nameOf(p)):nameOf(p);
+      const pct=Math.round(prob*100);
+      return `<div class="ddd-win-row"><div class="ddd-win-name">${nm}</div><div class="ddd-win-track"><div class="ddd-win-fill" style="width:${pct}%"></div></div><div class="ddd-win-pct">${pct}%</div></div>`;
+    }).join('');
+    const leader=pa>=.5?a:b, le=pa>=.5?ea:eb;
+    const matchPoint=le.need===1?'；已進入賽點（差1分）':le.need===2?'；距勝利僅差2分':'';
+    const detail=`依據：VP、距離目標分數、MaxN₂／目前N₂、手牌即時得分、剩餘牌型相容度、順位；${nameOf(leader)}目前較優勢${matchPoint}。`;
+    box.querySelector('.ddd-win-detail').textContent=detail;
+    box.classList.add('open');
+  }
+
+  // Hook the final render without touching game rules or AI decisions.
+  if(typeof render==='function'){
+    const previousRender=render;
+    render=function(){
+      const result=previousRender.apply(this,arguments);
+      try{update();}catch(err){console.warn('[DDD v193] win prediction update failed',err);}
+      return result;
+    };
+  }
+  window.DDDWinPrediction={version:VERSION,update,evaluatePlayer:evaluate};
+  setTimeout(()=>{try{update();}catch(_){}},0);
+})();
+</script>
+
+
+
+<!-- v194: unify the first-load and return-home UI; keep v174 six-card layout with the brighter blue card palette -->
+<style id="ddd-v194-home-style-unified">
+/* The final v174 home is the canonical home.  Keep its 3x2 centered layout,
+   but use the brighter sapphire palette from the earlier home cards. */
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card{
+  background:linear-gradient(145deg,rgba(24,104,208,.94),rgba(8,53,126,.96))!important;
+  border:1px solid rgba(157,211,255,.62)!important;
+  color:#fff!important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.18),
+    0 5px 14px rgba(0,25,72,.22)!important;
+  filter:none!important;
+}
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card:hover,
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card:focus-visible{
+  background:linear-gradient(145deg,rgba(31,123,239,.98),rgba(9,66,165,.98))!important;
+  border-color:rgba(189,226,255,.9)!important;
+  filter:brightness(1.04)!important;
+  outline:none!important;
+}
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card:active{
+  background:linear-gradient(145deg,rgba(18,92,190,.98),rgba(7,48,124,.98))!important;
+  transform:translateY(1px)!important;
+}
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card .mode-home-name{
+  color:#fff!important;
+  text-shadow:0 1px 3px rgba(0,20,70,.72)!important;
+}
+.mode-home-modal .ddd-v174-home .ddd-v174-home-card .mode-home-desc{
+  color:#d9ecff!important;
+  opacity:.96!important;
+  text-shadow:0 1px 2px rgba(0,20,70,.6)!important;
+}
+</style>
+<script id="ddd-v194-home-first-render-fix">
+(()=>{
+  'use strict';
+  // v193 contained an older showModeHome that could render before the later v174
+  // replacement was installed.  That left the first visit on the old DOM while
+  // subsequent returns used the new DOM.  Re-render only when an old home is
+  // actually visible; do not disturb profile/setup/game modals.
+  const refreshLegacyHomeOnce=()=>{
+    try{
+      const backdrop=document.getElementById('modalBackdrop');
+      const body=document.getElementById('modalBody');
+      const modal=backdrop?.querySelector('.modal');
+      if(!backdrop?.classList.contains('open') || !modal?.classList.contains('mode-home-modal') || !body) return;
+      const hasLegacyHome=Boolean(body.querySelector('.mode-home-layout')) && !body.querySelector('.ddd-v174-home');
+      if(hasLegacyHome && typeof showModeHome==='function') showModeHome(true);
+    }catch(err){ console.warn('[DDD v194] home refresh skipped:',err); }
+  };
+  // Run after all late overrides/styles have settled. Two frames cover Safari's
+  // initial modal paint without adding a visible delay.
+  requestAnimationFrame(()=>requestAnimationFrame(refreshLegacyHomeOnce));
+})();
+</script>
+
+
+
+<!-- v198: fix win-rate visibility by using the actual global lexical `game` state and exposing window.game compatibility bridge -->
+<!-- v197: live win-rate bar is now a static board element directly below VP/MaxN2; robust 2-player detection + render/DOM fallback updates -->
+<!-- v196: fix live win-rate bar mount selector; show directly below actual VP/MaxN2 track in every 2-player match -->
+<!-- v195: move live 2P win prediction directly below VP/MaxN2 track; seat-colored split bar with P1/P2 names -->
+<style id="ddd-v197-win-rate-bar-style">
+  /* v195 supersedes the older log-panel prediction card. */
+  #dddWinPrediction{display:none!important}
+  #dddWinRateBar{
+    display:none;
+    grid-column:1 / -1;
+    grid-row:auto;
+    width:100%;
+    min-width:0;
+    padding:7px 9px 8px;
+    border:1px solid rgba(214,232,255,.24);
+    border-radius:12px;
+    background:rgba(7,49,122,.84);
+    box-sizing:border-box;
+  }
+  #dddWinRateBar.open{display:block}
+  .ddd-v195-win-labels{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+    align-items:center;
+    gap:7px;
+    margin-bottom:5px;
+    font-size:.72rem;
+    line-height:1.2;
+    min-width:0;
+  }
+  .ddd-v195-win-player{
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-weight:950;
+    color:#fff;
+  }
+  .ddd-v195-win-player.right{text-align:right}
+  .ddd-v195-win-title{
+    color:var(--muted);
+    font-size:.64rem;
+    font-weight:800;
+    white-space:nowrap;
+  }
+  .ddd-v195-win-track{
+    position:relative;
+    display:flex;
+    width:100%;
+    height:22px;
+    overflow:hidden;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.30);
+    background:rgba(0,15,40,.38);
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.28);
+  }
+  .ddd-v195-win-side{
+    position:relative;
+    height:100%;
+    min-width:0;
+    transition:width .28s ease;
+  }
+  .ddd-v195-win-side.left{border-radius:999px 0 0 999px}
+  .ddd-v195-win-side.right{border-radius:0 999px 999px 0}
+  .ddd-v195-win-pct{
+    position:absolute;
+    top:50%;
+    transform:translateY(-50%);
+    color:#fff;
+    font-size:.70rem;
+    font-weight:950;
+    line-height:1;
+    text-shadow:0 1px 3px rgba(0,0,0,.85);
+    pointer-events:none;
+    z-index:2;
+  }
+  .ddd-v195-win-side.left .ddd-v195-win-pct{left:8px}
+  .ddd-v195-win-side.right .ddd-v195-win-pct{right:8px}
+  .ddd-v195-win-mid{
+    position:absolute;
+    left:50%;
+    top:0;
+    bottom:0;
+    width:1px;
+    transform:translateX(-.5px);
+    background:rgba(255,255,255,.62);
+    box-shadow:0 0 4px rgba(0,0,0,.35);
+    pointer-events:none;
+    z-index:3;
+  }
+  @media(max-width:420px){
+    #dddWinRateBar{padding:6px 7px 7px}
+    .ddd-v195-win-labels{font-size:.66rem;gap:4px}
+    .ddd-v195-win-title{font-size:.58rem}
+    .ddd-v195-win-track{height:20px}
+    .ddd-v195-win-pct{font-size:.64rem}
+  }
+</style>
+<script id="ddd-v197-win-rate-bar">
+(()=>{
+  'use strict';
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const sigmoid=x=>1/(1+Math.exp(-x));
+
+  function allowed(){
+    try{
+      if(typeof game==='undefined' || game.gameOver) return false;
+      if(!Array.isArray(game.players) || game.players.length!==2) return false;
+      // Use the actual mode value rather than legacy helper names; ordinary/league/tournament 2P all pass.
+      const mode=String(game.mode||'');
+      if(mode==='tutorial' || mode==='maldives') return false;
+      const board=document.querySelector('.board');
+      return Boolean(board);
+    }catch(_){return false;}
+  }
+
+  function ensureBar(){
+    let root=document.getElementById('dddWinRateBar');
+    if(root) return root;
+    // Self-healing fallback for cached/older markup: recreate it immediately before board-main.
+    const board=document.querySelector('.board');
+    const boardMain=board?.querySelector(':scope > .board-main');
+    if(!board || !boardMain) return null;
+    root=document.createElement('section');
+    root.id='dddWinRateBar';
+    root.setAttribute('aria-label','即時勝率');
+    root.innerHTML=`
+      <div class="ddd-v195-win-labels">
+        <div class="ddd-v195-win-player left"></div>
+        <div class="ddd-v195-win-title">即時勝率</div>
+        <div class="ddd-v195-win-player right"></div>
+      </div>
+      <div class="ddd-v195-win-track" role="img" aria-label="即時勝率">
+        <div class="ddd-v195-win-side left"><span class="ddd-v195-win-pct"></span></div>
+        <div class="ddd-v195-win-side right"><span class="ddd-v195-win-pct"></span></div>
+        <i class="ddd-v195-win-mid" aria-hidden="true"></i>
+      </div>`;
+    board.insertBefore(root,boardMain);
+    return root;
+  }
+
+  function playerName(player){
+    try{
+      if(player?.isAI && typeof localizedAINameByCode==='function' && player.aiCode!=null){
+        return localizedAINameByCode(player.aiCode,window.gameLanguage||'zh') || player.name || 'AI';
+      }
+      if(player?.isAI && typeof window.dddAIName==='function'){
+        return window.dddAIName(player,window.gameLanguage||'zh') || player.name || 'AI';
+      }
+      return String(player?.name || '玩家');
+    }catch(_){return String(player?.name || '玩家');}
+  }
+
+  function seatColor(player,index){
+    try{
+      if(typeof seatThemeOf==='function') return seatThemeOf(player).hex;
+    }catch(_){}
+    const fallback=['#55894B','#2F6FD6','#F6C23E','#9B59B6','#D94B4B'];
+    return fallback[index] || '#2F6FD6';
+  }
+
+  function probabilities(){
+    const a=game.players[0], b=game.players[1];
+    let ea=null, eb=null;
+    try{
+      const evaluator=window.DDDWinPrediction?.evaluatePlayer;
+      if(typeof evaluator==='function'){
+        ea=evaluator(a); eb=evaluator(b);
+      }
+    }catch(_){}
+    if(!ea || !eb) return [0.5,0.5];
+    let pa=sigmoid((Number(ea.value||0)-Number(eb.value||0))/1.45);
+    const target=Math.max(1,Number(game.targetScore||16));
+    if(!game.gameOver && !a.eliminated && !b.eliminated && Number(a.score||0)<target && Number(b.score||0)<target){
+      pa=clamp(pa,.03,.97);
+    }
+    return [pa,1-pa];
+  }
+
+  function update(){
+    const root=ensureBar();
+    if(!root) return;
+    if(!allowed()){
+      root.classList.remove('open');
+      return;
+    }
+    const [p1,p2]=game.players;
+    const [pr1,pr2]=probabilities();
+    const pct1=Math.round(pr1*100);
+    const pct2=100-pct1;
+    const left=root.querySelector('.ddd-v195-win-side.left');
+    const right=root.querySelector('.ddd-v195-win-side.right');
+    const leftName=root.querySelector('.ddd-v195-win-player.left');
+    const rightName=root.querySelector('.ddd-v195-win-player.right');
+    const leftPct=left.querySelector('.ddd-v195-win-pct');
+    const rightPct=right.querySelector('.ddd-v195-win-pct');
+    const c1=seatColor(p1,0), c2=seatColor(p2,1);
+    leftName.textContent=`順位1　${playerName(p1)}`;
+    rightName.textContent=`${playerName(p2)}　順位2`;
+    leftName.style.color=c1;
+    rightName.style.color=c2;
+    left.style.width=`${pct1}%`;
+    right.style.width=`${pct2}%`;
+    left.style.background=c1;
+    right.style.background=c2;
+    leftPct.textContent=`${pct1}%`;
+    rightPct.textContent=`${pct2}%`;
+    root.querySelector('.ddd-v195-win-track').setAttribute('aria-label',`${playerName(p1)} ${pct1}%，${playerName(p2)} ${pct2}%`);
+    root.classList.add('open');
+  }
+
+  // Put v195 at the end of the render chain so later UI wrappers cannot suppress updates.
+  if(typeof render==='function'){
+    const previousRender=render;
+    render=function(){
+      const out=previousRender.apply(this,arguments);
+      try{update();}catch(err){console.warn('[DDD v197] win-rate bar update failed',err);}
+      return out;
+    };
+  }
+
+  if(typeof setGameLanguage==='function'){
+    const previousLanguage=setGameLanguage;
+    setGameLanguage=function(){
+      const out=previousLanguage.apply(this,arguments);
+      try{update();}catch(_){}
+      return out;
+    };
+    window.dddSetGameLanguage=setGameLanguage;
+  }
+
+  window.DDDWinRateBar={version:'v197',update};
+  // Static markup guarantees the bar exists. These fallbacks make the state update independent of
+  // any older render wrapper being replaced by another late patch or by a cached page lifecycle.
+  ensureBar();
+  try{ queueMicrotask(update); }catch(_){ setTimeout(update,0); }
+  setTimeout(()=>{ try{update();}catch(_){} },120);
+
+  const observed=document.getElementById('playerRows') || document.querySelector('.board');
+  if(observed && typeof MutationObserver==='function'){
+    let queued=false;
+    const observer=new MutationObserver(()=>{
+      if(queued) return;
+      queued=true;
+      requestAnimationFrame(()=>{ queued=false; try{update();}catch(_){} });
+    });
+    observer.observe(observed,{childList:true,subtree:true,characterData:true});
+  }
+
+  // Low-frequency safety net for iOS page restore / cached DOM. Hidden pages do no work.
+  setInterval(()=>{
+    if(document.hidden) return;
+    try{update();}catch(_){}
+  },1500);
+})();
+</script>
+
+<!-- v198: fix live win-rate visibility: `game` is a global lexical const, not automatically `window.game`; expose bridge and force 2P refresh -->
+<script id="ddd-v198-game-reference-bridge">
+(()=>{
+  'use strict';
+  try{
+    if(typeof game!=='undefined') window.game=game;
+    const refresh=()=>{
+      try{ window.DDDWinPrediction?.update?.(); }catch(err){ console.warn('[DDD v198] prediction refresh failed',err); }
+      try{ window.DDDWinRateBar?.update?.(); }catch(err){ console.warn('[DDD v198] win-rate bar refresh failed',err); }
+    };
+    refresh();
+    requestAnimationFrame(refresh);
+    setTimeout(refresh,80);
+  }catch(err){ console.warn('[DDD v198] game reference bridge failed',err); }
+})();
+</script>
+
+<script id="ddd-v199-zeus-benchmark-api">
+(()=>{
+  window.DDDZeusPrototype={
+    code:226, opponentCode:224, version:"v199-prototype",
+    benchmark: async (pairs=50,seedBase=2026114001)=>{
+      if(typeof simulateDuelBatch!=="function") throw new Error("simulateDuelBatch unavailable");
+      return simulateDuelBatch(226,224,Math.max(1,Number(pairs)||50),Number(seedBase)||2026114001);
+    }
+  };
+})();
+</script>
+
+
+<!-- v210: X-tier test arena removed; AI226/227/228 are now formal roster members. -->
+<script id="ddd-v210-formal-x-ai-localization">
+(()=>{
+  'use strict';
+  try{
+    window.DDD_AI_NAMES=window.DDD_AI_NAMES||{};
+    window.DDD_AI_NAMES['226']={zh:'宙斯',en:'Zeus',ja:'ゼウス'};
+    window.DDD_AI_NAMES['227']={zh:'天照',en:'Amaterasu',ja:'天照'};
+    window.DDD_AI_NAMES['228']={zh:'祝融',en:'Zhurong',ja:'祝融'};
+    window.DDD_FORMAL_AI_COUNT=AI_ORDER.length;
+  }catch(err){console.warn('[DDD v210] X AI localization/init failed',err);}
+})();
+</script>
 </body></html>
