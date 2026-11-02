@@ -27,6 +27,7 @@
 <!-- v212: X級解鎖32強賽：32→16→8→4→決賽；32/16/8強皆4人組各2局取前2；AI可重複但同AI最多2席；冠亞季320/200/100。 -->
 <!-- v206: X級祝融 AI228：完整繼承共工 Precision4 空手市場精算＋A225連續事件保護；落後時 Flame Pursuit；100場對共工約60% -->
 <!-- v213: standard/league series losers, human and AI alike, earn 50% of winner base EXP; promotion/tournament unchanged -->
+<!-- v215: restore external Supabase SDK from v198; final leaderboard sort = tier then Gold>Silver>Bronze, X fixed 祝融>天照>宙斯 -->
 <!DOCTYPE html>
 <!-- v200: X級天照 AI227；以須佐之男 AI62 Precision6 為母體，加入適應局勢、日輪防線、終局收束與即時勝率二次評分。 -->
 <!-- v173: tournament result = Place/Player/W/L/Games; bracket compact Pt/VP/+/-/N₂/MaxN₂/R with zh/en/ja -->
@@ -4514,8 +4515,7 @@
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="preconnect" href="https://beffzyqtagssjdfhcewv.supabase.co" crossorigin>
 <!-- v165 Supabase cloud sync: browser-safe publishable client -->
-
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" crossorigin="anonymous"></script>
 
 <style id="v166-online-leaderboard-ui">
 /* 首頁六項：提高標題與說明字級，但維持3x2配置。 */
@@ -23614,10 +23614,14 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return out;
   }
 
-  // EXP is the primary ranking metric for both humans and AI.
+  // v215：最終生效排行榜排序。大等級優先；同級固定金 > 銀 > 銅；
+  // 階級相同才以 EXP、Rating 與獎牌作 tie-break。X級因此固定 祝融 > 天照 > 宙斯。
   rankingCompareUnified=function(a,b){
+    const ar=rankingHierarchyMeta(a), br=rankingHierarchyMeta(b);
     const ap=rankingTournamentPodiumTotals(a),bp=rankingTournamentPodiumTotals(b);
-    return (totalExp(b)-totalExp(a))
+    return (br.level-ar.level)
+      || (br.ring-ar.ring)
+      || (totalExp(b)-totalExp(a))
       || (Number(b.rating||0)-Number(a.rating||0))
       || (bp.champion-ap.champion)
       || (bp.runnerUp-ap.runnerUp)
