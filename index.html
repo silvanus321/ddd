@@ -1,3 +1,5 @@
+<!-- v236 2026-11-23: AI baseline EXP aligned to tier/ring; gatekeeper promotion compatibility; promotion cards show normal/gatekeeper AI. -->
+<!-- v236 EXP: 正式一般賽每局 +5×大等級，錦標賽每局 +10×大等級；既有獎勵另外發放，升級戰不適用。 -->
 <!-- v236: XII級 銀環・伊邪那岐 AI233／銅環・克洛諾斯 AI232; 36強須達 XII級. -->
 <!-- v233: XI Messiah adaptive tempo; 100 fixed-seed games 60/100 vs v231, independent-seed 62/100. -->
 <!-- v172: free-event confirmation buttons follow left/right-handed preference -->
@@ -6947,18 +6949,20 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     const PLAYER_RANK_MAX = 12;
     const PLAYER_RANK_RINGS = Object.freeze(["","銅","銀","金"]);
     const ROMAN_LEVELS = Object.freeze(["I","II","III","IV","V","VI","VII","VIII","IX","X","XI","XII"]);
-    // v210：每名 AI 固有基礎 EXP＝其 I～X 階級 × 1000。
-    // 這是一次性的排名基準，不屬於一般賽或錦標賽實戰 EXP，也不會每次出場重複累加。
+    // v236 XP 修正：AI 起始 EXP 必須符合其已指定的大級別與銅／銀／金環位。
+    // 使用同一份玩家 EXP 門檻表，而不是舊版「等級 × 1000」；
+    // AI 的實戰 EXP（leaguePoints / tournamentTP）另行累加，不因改版遭到重設。
     function aiBaseExpForCode(code){
-      const tier=aiLadderMeta(Number(code))?.tier;
-      const idx=ROMAN_LEVELS.indexOf(tier);
-      return (idx>=0?idx+1:1)*1000;
+      const meta=aiLadderMeta(Number(code));
+      const level=meta?ROMAN_LEVELS.indexOf(meta.tier)+1:1;
+      const t=careerTierThresholds(level>0?level:1);
+      return meta?.ring==='金環'?t.gold:meta?.ring==='銀環'?t.silver:t.bronze;
     }
     function careerPlayerLevel(rec=careerCurrentProfile()){
       return Math.max(1,Math.min(PLAYER_RANK_MAX,Math.floor(Number(rec?.playerRankLevel||1))));
     }
     function careerTotalPoints(rec=careerCurrentProfile()){
-      const aiBase=rec?.type==="ai"?Math.max(aiBaseExpForCode(rec?.aiCode),Number(rec?.aiBaseExp||0)):0;
+      const aiBase=rec?.type==="ai"?aiBaseExpForCode(rec?.aiCode):0;
       return aiBase+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
     }
     function careerTierThresholds(level){
@@ -7170,8 +7174,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       });
       out.leagueWins=Number(out.leagueWins||0);
       if(out.type==="ai"){
-        // v186：舊存檔沒有 aiBaseExp 時，在正規化時自動補一次；之後只保留，不會重複累加。
-        out.aiBaseExp=Math.max(aiBaseExpForCode(out.aiCode),Math.max(0,Number(out.aiBaseExp||0)));
+        // 重新依正式階級及環位計算基礎值：清除舊版 ×1000 基準，不改動實戰EXP。
+        out.aiBaseExp=aiBaseExpForCode(out.aiCode);
       }else{
         out.aiBaseExp=0;
       }
@@ -7306,7 +7310,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       if((rec.historyKeys||[]).includes(promotionEvent))return game.promotionResult||null;
       const beforeLevel=careerPlayerLevel(rec),expected=careerPromotionTarget(rec);
       const cleared=Boolean(game.settings?.promotionThreeWins===true);
-      const gatekeeper=Boolean(game.settings?.promotionGatekeeper) && Boolean(expected) && Number(expected.code)===targetCode && careerPromotionEligible(rec);
+      // 由正式關主名單和挑戰開始時的大級別核實資格。
+      // 舊版升級戰入口未帶 promotionGatekeeper 旗標，不能因此誤判為練功局。
+      const enteredLevel=Number(game.settings?.promotionStartLevel||beforeLevel);
+      const gatekeeper=Boolean(expected) && Number(expected.code)===targetCode
+        && enteredLevel===beforeLevel && careerPromotionEligible(rec);
       const promoted=Boolean(cleared&&gatekeeper&&beforeLevel<PLAYER_RANK_MAX);
       if(gatekeeper){
         rec.promotionBattles=Number(rec.promotionBattles||0)+1;
@@ -21109,6 +21117,7 @@ window.DDDKing.version="King233-v2-20261123";
              : `${top.name} 贏得第 ${game.leagueGameCount} 局`;
            addLog(`🏁 第${game.leagueGameCount}局結束：${winnerText}。`, true);
            setStatus(isPromotionBattle?`升級戰系列 ${promotionWins}：${promotionLosses}`:`第${game.leagueGameCount}局結束。`, "ok");
+           if(!isPromotionBattle && typeof window.dddSyncCareer === "function") void window.dddSyncCareer("league_game_participation");
            render();
            showLeagueGameOverModal(winnerText, ranked, false);
         }
@@ -21221,8 +21230,9 @@ window.DDDKing.version="King233-v2-20261123";
           t.results[`match${matchInfo.id}`] = {p1:ranked[0],s1:ranked[0].score,n1:ranked[0].maxPressure,p2:ranked[1],s2:ranked[1].score,n2:ranked[1].maxPressure,rounds:game.round};
         }
         rankingRecordTournamentMatch(ranked,matchInfo);
-        if(typeof window.dddRecordTournamentMatch==="function") void window.dddRecordTournamentMatch(ranked,matchInfo);
-        if (matchInfo.type === "final") {
+         if(typeof window.dddRecordTournamentMatch==="function") void window.dddRecordTournamentMatch(ranked,matchInfo);
+         if (matchInfo.type !== "final" && ranked.some(p=>!p.isAI) && typeof window.dddSyncCareer === "function") void window.dddSyncCareer("tournament_game_participation");
+         if (matchInfo.type === "final") {
           rankingRecordTournamentFinal();
           if(typeof window.dddRecordTournamentFinal==="function") void window.dddRecordTournamentFinal();
           if(typeof window.dddSyncCareer === "function") void window.dddSyncCareer("tournament_final");
@@ -21278,6 +21288,10 @@ window.DDDKing.version="King233-v2-20261123";
         html += `<tr><td>${i+1}</td><td>${escapeHtml(p.name)}</td><td>${p.leaguePoints || 0}</td><td>${p.leagueTotalScore || 0}</td><td>${p.leagueLastPoints ?? 0}</td></tr>`;
       });
       html += `</table><p style="margin:7px 0 0;color:var(--muted);font-size:.72rem;">最終排名只比較總Pt；最高Pt相同則共享勝利。</p></div>`;
+      if(!isFinal && !isPromotion && game._dddLastParticipationAward?.kind==="league"){
+        const bonus=game._dddLastParticipationAward;
+        html+=`<div class="career-rank-card"><b>📘 本局參賽 EXP：+${bonus.actual}</b><div class="career-rank-sub">5 × ${ROMAN_LEVELS[bonus.level-1]} 級；系列勝負獎勵將另行結算。</div></div>`;
+      }
       if(isFinal){
         html += careerProgressSummaryHtml();
         if(isPromotion&&game.promotionResult){
@@ -22802,7 +22816,7 @@ window.DDDKing.version="King233-v2-20261123";
         const count=Number(countEl.value||2);
         const points=leaguePointsForPlayerCount(count).join("/");
         const career=LEAGUE_WIN_POINTS[count]||0;
-        help.textContent=`${count}人局：每局使用${count}種隨機牌色；名次Pt ${points}；系列目標${leagueVictoryPoints(count)}Pt（最多3局）。系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。`;
+        help.textContent=`${count}人局：每局使用${count}種隨機牌色；名次Pt ${points}；系列目標${leagueVictoryPoints(count)}Pt（最多3局）。每局完成另得5×等級EXP；系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。`;
       };
       countEl.addEventListener("change",rebuild);
       rebuild();
@@ -23114,7 +23128,7 @@ window.DDDKing.version="King233-v2-20261123";
         const count=Number(countEl.value||2), target=leagueVictoryPoints(count);
         const points=leaguePointsForPlayerCount(count).join("/");
         const career=LEAGUE_WIN_POINTS[count]||0;
-        help.innerHTML=`<b>積分方式：</b>每局依最終名次取得 ${points} Pt；先達 ${target} Pt，或第3局結束時總Pt最高者，成為系列勝者。系列最終只比較總Pt，同分可共享勝利；系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。<br>${count}人局使用隨機${count}色牌組，AI對手由系統隨機決定。`;
+        help.innerHTML=`<b>積分方式：</b>每局依最終名次取得 ${points} Pt；先達 ${target} Pt，或第3局結束時總Pt最高者，成為系列勝者。系列最終只比較總Pt，同分可共享勝利；每局完成另得5×等級EXP；系列勝者取得基礎EXP ${career}，敗者取得其50%；真人與AI皆適用，實得EXP再×各自大等級。<br>${count}人局使用隨機${count}色牌組，AI對手由系統隨機決定。`;
       };
       countEl.addEventListener("change",rebuild); rebuild();
       els.modalActions.append(
@@ -25383,10 +25397,11 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         tournament_size:null,
         placement:hit.placement,
         vp:Number(p.score||0),
-        league_points_awarded:0,
-        tournament_tp_awarded:0,
-        details:{
-          series_points_awarded:Number(p.leagueLastPoints||0),
+         league_points_awarded:game.settings?.promotionBattle?0:DDD_LEAGUE_PARTICIPATION_BASE*careerPlayerLevel(careerCurrentProfile()),
+         tournament_tp_awarded:0,
+         details:{
+           participation_base:game.settings?.promotionBattle?0:DDD_LEAGUE_PARTICIPATION_BASE,
+           series_points_awarded:Number(p.leagueLastPoints||0),
           series_points_after:Number(p.leaguePoints||0),
           max_n2:Number(p.maxPressure||0),
           eliminated:Boolean(p.eliminated),
@@ -25407,7 +25422,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const p=hit.player,n=Number(game.settings?.playerCount||finalRanked?.length||0);
       const topSeries=Math.max(...(finalRanked||[]).map(x=>Number(x?.leaguePoints||0)));
       const isWinner=Number(p.leaguePoints||0)===topSeries;
-      const careerAward=Number(game._lastExpAwards?.[p.id]?.actual ?? (game.settings?.promotionBattle
+      const careerAward=Number((game._lastExpAwards?.[p.id]?.coreActual||0)+(game._lastExpAwards?.[p.id]?.promotionTopUp||0) || (game.settings?.promotionBattle
         ? Number(game.promotionResult?.reward||0)
         : (isWinner ? Number(LEAGUE_WIN_POINTS[n]||0) * Math.max(1,Number(careerPlayerLevel(careerCurrentProfile())||1)) : 0)));
       return await insertMatchResult({
@@ -25447,10 +25462,11 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         tournament_size:Number(t.size||0)||null,
         placement:hit.placement,
         vp:Number(p.score||0),
-        league_points_awarded:0,
-        tournament_tp_awarded:0,
-        details:{
-          match_name:String(matchInfo?.name||""),
+         league_points_awarded:0,
+         tournament_tp_awarded:DDD_TOURNAMENT_PARTICIPATION_BASE*careerPlayerLevel(careerCurrentProfile()),
+         details:{
+           participation_base:DDD_TOURNAMENT_PARTICIPATION_BASE,
+           match_name:String(matchInfo?.name||""),
           match_type:String(matchInfo?.type||""),
           stage:String(matchInfo?.stage||""),
           group:String(matchInfo?.group||""),
@@ -25484,7 +25500,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         placement:hit.placement,
         vp:Number(p.tTotalScore||p.score||0),
         league_points_awarded:0,
-        tournament_tp_awarded:Number(game._lastExpAwards?.[p.id]?.actual ?? (hit.placement<=3 ? Number(awards[hit.placement-1]||0) * Math.max(1,Number(careerPlayerLevel(careerCurrentProfile())||1)) : 0)),
+         tournament_tp_awarded:Number(game._lastExpAwards?.[p.id]?.coreActual ?? (hit.placement<=3 ? Number(awards[hit.placement-1]||0) * Math.max(1,Number(careerPlayerLevel(careerCurrentProfile())||1)) : 0)),
         details:{
           champion:hit.placement===1,
           podium:hit.placement<=3,
@@ -25647,7 +25663,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       unlockPromotion:'解鎖升級戰', unlockAI:'解鎖 {tier} 級 AI：{names}', unlockTournament:'解鎖 {size}強錦標賽',
       winner:'冠軍', runnerUp:'亞軍', third:'季軍', shared:'共享勝利', noExp:'本次沒有取得 EXP', bracketTitle:'錦標賽晉級樹', bracketUpdated:'本場比賽結束，最新戰況更新：', bracketCurrent:'目前錦標賽整體戰況：', prelim:'初賽', groupStage:'分組', quarter:'8強', semi:'四強', finals:'決賽', bronzeMatch:'季軍戰', finalMatch:'冠軍戰', resultCol:'結果', advance1:'第1名晉級', advance2:'前2名晉級', notPlayed:'尚未進行', qualifiedFinal:'晉級冠軍戰', toBronze:'進入季軍戰', fourth:'第4名', nextMatch:'進入下一場', backGame:'返回遊戲', backTable:'返回觀看桌面', seedNote:'依上一階段成績排序；下一場順位依賽制規則調整。',
       globalPlayers:'全球玩家', localAI:'我與 AI', refresh:'重新整理', rename:'修改玩家名稱', close:'返回', rating:'Rating', aiBaseExp:'AI 基礎 EXP', sourceLeague:'一般賽 EXP', sourceTournament:'錦標 EXP',
-      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 32 個 AI 依累計 EXP 排名；每名 AI 另有一次性基礎 EXP＝自身 I～XI 級數 × 1000，實戰 EXP 仍照原規則累積。',
+      leaderboardTitle:'🏆 排行榜', leaderboardGlobalHelp:'全球排行榜只列真人，依累計 EXP 排序。', leaderboardLocalHelp:'你與 32 個 AI 依累計 EXP 排名；每名 AI 的起始 EXP 依其正式級別與金／銀／銅環門檻設定，實戰 EXP 仍照原規則累積。',
       detailTitle:'排行榜詳細資料', backLeaderboard:'返回排行榜', aiTier:'AI階級', playerLevel:'玩家等級', tournamentGames:'錦標總場次', medals:'冠／亞／季軍', medalRate:'錦標奪牌率', leagueRate:'積分賽勝率', leagueSeries:'積分賽系列數',
       loading:'讀取中…', cloudFail:'全球排行榜目前無法連線。', noRows:'尚無排行榜紀錄。'
     },
@@ -25706,7 +25722,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     return idx>=0?idx+1:1;
   };
   const participantLevel=(player,record=null)=>player?.isAI?aiLevelNumber(player.aiCode):Math.max(1,Math.min(PLAYER_RANK_MAX,Number(record?.playerRankLevel||1)));
-  const totalExp=rec=>(rec?.type==='ai'?Math.max(aiBaseExpForCode(rec?.aiCode),Math.max(0,Number(rec?.aiBaseExp||0))):0)+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
+  const totalExp=rec=>(rec?.type==='ai'?aiBaseExpForCode(rec?.aiCode):0)+Math.max(0,Number(rec?.leaguePoints||0))+Math.max(0,Number(rec?.tournamentTP||0));
   const localPlayerName=()=>rankingProfileName();
   const localAINameFor=(p,lang=window.gameLanguage||'zh')=>p?.isAI?(localizedAINameByCode(p.aiCode,lang)||stripVisibleRankPrefix(p.name||'')):(p?.name||localPlayerName());
   const ringName=(count,lang=window.gameLanguage||'zh')=>{
@@ -25804,6 +25820,48 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       || String(a.name||'').localeCompare(String(b.name||''),'zh-TW');
   };
 
+  // 正式賽事的「完成一局」保底 EXP。所有參賽者（真人及 AI）皆適用；升級戰不適用。
+  // 保底與系列／獎牌獎勵獨立入帳；使用既有的 historyKeys 確保重開／重結算不會重領。
+  const DDD_LEAGUE_PARTICIPATION_BASE=5;
+  const DDD_TOURNAMENT_PARTICIPATION_BASE=10;
+  function dddParticipationPrefix(kind, seriesId){
+    return `participation:${kind}:${String(seriesId||"legacy")}:`;
+  }
+  function dddParticipationSum(rec,kind,seriesId,baseRate,level){
+    const prefix=dddParticipationPrefix(kind,seriesId);
+    const count=(rec?.historyKeys||[]).filter(x=>typeof x==="string"&&x.startsWith(prefix)).length;
+    return {games:count,base:count*baseRate,actual:count*baseRate*level};
+  }
+  function dddAwardMatchParticipation(rankedPlayers,kind,seriesId,matchKey,baseRate){
+    if(kind==="league" && game.settings?.promotionBattle)return [];
+    if(!Array.isArray(rankedPlayers)||!rankedPlayers.length)return [];
+    const event=dddParticipationPrefix(kind,seriesId)+String(matchKey);
+    const store=rankingReadStore(),handled=new Set(),awarded=[];
+    rankedPlayers.forEach(p=>{
+      if(!p)return;
+      const key=rankingParticipantKey(p);
+      if(handled.has(key))return; // 同一名 AI 即使占多席，每局只領一次
+      handled.add(key);
+      const rec=rankingEnsureParticipantInStore(store,p);
+      if((rec.historyKeys||[]).includes(event))return;
+      const level=participantLevel(p,rec),actual=baseRate*level;
+      const field=kind==="league"?"leaguePoints":"tournamentTP";
+      rec[field]=Math.max(0,Number(rec[field]||0))+actual;
+      rec.historyKeys.push(event);
+      if(rec.historyKeys.length>300)rec.historyKeys=rec.historyKeys.slice(-300);
+      rec.updatedAt=Date.now();
+      if(rec.type!=="ai")careerSyncUnlockRecord(rec);
+      awarded.push({key,player:p,level,base:baseRate,actual});
+    });
+    if(awarded.length)rankingWriteStore(store);
+    const human=awarded.find(x=>!x.player.isAI);
+    if(human){
+      game._dddLastParticipationAward={kind,gameKey:event,base:human.base,level:human.level,actual:human.actual};
+      addLog(`📘 ${kind==="league"?"一般賽":"錦標賽"}參賽 EXP：${baseRate} × ${ROMAN_LEVELS[human.level-1]} = +${human.actual} EXP。`,true);
+    }
+    return awarded;
+  }
+
   // Persistent per-series / per-tournament totals used by the result center.
   const originalRecordLeagueGame=rankingRecordLeagueGame;
   rankingRecordLeagueGame=function(rankedPlayers){
@@ -25813,7 +25871,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       p.leagueGamesPlayed=Number(p.leagueGamesPlayed||0)+1;
       p.dddLastMatchVP=Number(p.score||0);p.dddLastMatchMaxN2=Number(p.maxPressure||0);p.dddLastMatchRounds=Number(game.round||0);
     });
-    return originalRecordLeagueGame(rankedPlayers);
+    const result=originalRecordLeagueGame(rankedPlayers);
+    dddAwardMatchParticipation(rankedPlayers,"league",game._rankingLeagueId||"legacy",`game:${game.leagueGameCount}`,DDD_LEAGUE_PARTICIPATION_BASE);
+    return result;
   };
 
   const originalRecordTournamentMatch=rankingRecordTournamentMatch;
@@ -25827,7 +25887,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       else p.careerTournamentLosses=Number(p.careerTournamentLosses||0)+1;
       p.dddLastMatchVP=Number(p.score||0);p.dddLastMatchMaxN2=Number(p.maxPressure||0);p.dddLastMatchRounds=Number(game.round||0);
     });
-    return originalRecordTournamentMatch(rankedPlayers,matchInfo);
+    const result=originalRecordTournamentMatch(rankedPlayers,matchInfo);
+    dddAwardMatchParticipation(rankedPlayers,"tournament",game.tournament?.id||"legacy",`${matchInfo?.id||matchInfo?.name||game.tournament?.matchIndex}:game:${matchInfo?.round||0}`,DDD_TOURNAMENT_PARTICIPATION_BASE);
+    return result;
   };
 
   function leagueRows(finalRanked){
@@ -25888,6 +25950,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         base=isSeriesWinner ? winnerBase : Math.floor(winnerBase/2);
       }
       const coreActual=base*rewardMultiplier;
+      const participation=game.settings?.promotionBattle
+        ? {games:0,base:0,actual:0}
+        : dddParticipationSum(before,"league",game._rankingLeagueId||"legacy",DDD_LEAGUE_PARTICIPATION_BASE,level);
       rec.leaguePoints=Number(before.leaguePoints||0)+coreActual;
       let promotionTopUp=0;
       // v207：關主5戰3勝升級後，若累計 EXP 尚未達下一級銅門檻，自動補足差額。
@@ -25899,9 +25964,9 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
         promotionTopUp=Math.max(0,nextBronze-currentTotal);
         if(promotionTopUp>0) rec.leaguePoints=Number(rec.leaguePoints||0)+promotionTopUp;
       }
-      const actual=coreActual+promotionTopUp;
+      const actual=coreActual+promotionTopUp+participation.actual;
       if(rec.type!=='ai') careerSyncUnlockRecord(rec);
-      game._lastExpAwards[p.id]={base,multiplier:rewardMultiplier,coreActual,promotionTopUp,actual,promotionWins,promotionAILevel,rewardPerWin:game.settings?.promotionBattle?10:0};
+      game._lastExpAwards[p.id]={base:base+participation.base,seriesBase:base,multiplier:rewardMultiplier,coreActual,promotionTopUp,participationBase:participation.base,participationActual:participation.actual,participationGames:participation.games,actual,promotionWins,promotionAILevel,rewardPerWin:game.settings?.promotionBattle?10:0};
     });
     if(game.settings?.promotionBattle&&game.promotionResult){
       const hp=(finalRanked||[]).find(p=>!p.isAI),award=hp?game._lastExpAwards[hp.id]:null;
@@ -25918,8 +25983,10 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       rows:leagueRows(finalRanked),
       humanId:(finalRanked||[]).find(p=>!p.isAI)?.id||null,
       expAward:(finalRanked||[]).find(p=>!p.isAI)?game._lastExpAwards[(finalRanked||[]).find(p=>!p.isAI).id]:{base:0,multiplier:careerPlayerLevel(afterHuman),actual:0},
-      career:buildCareerSnapshot(beforeHuman,afterHuman),
-      winnerIds:(finalRanked||[]).filter(p=>Number(p.leaguePoints||0)===topPoints).map(p=>p.id),
+      career:buildCareerSnapshot(
+         game.settings?.promotionBattle ? beforeHuman : {...beforeHuman,leaguePoints:Math.max(0,Number(beforeHuman.leaguePoints||0)-Number(game._lastExpAwards[(finalRanked||[]).find(p=>!p.isAI)?.id]?.participationActual||0))},
+         afterHuman),
+       winnerIds:(finalRanked||[]).filter(p=>Number(p.leaguePoints||0)===topPoints).map(p=>p.id),
       playerCount:n,games:Number(game.leagueGameCount||0),promotionResult:game.promotionResult?{...game.promotionResult}:null
     };
   };
@@ -25940,17 +26007,18 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const key=rankingParticipantKey(p),rec=store[key];if(!rec)return;
       const before=beforeByKey[key]||rankingBlankRecord({name:p.name,type:p.isAI?'ai':'human',aiCode:p.aiCode,rating:rec.rating||1000});
       const level=participantLevel(p,before),base=i<3?Number(baseAwards[i]||0):0;
-      const actual=awardedKeys.has(key)?0:base*level;
-      if(!awardedKeys.has(key)){rec.tournamentTP=Number(before.tournamentTP||0)+actual;awardedKeys.add(key);}
+      const participation=dddParticipationSum(before,"tournament",t.id||"legacy",DDD_TOURNAMENT_PARTICIPATION_BASE,level);
+      const podiumActual=awardedKeys.has(key)?0:base*level;
+      if(!awardedKeys.has(key)){rec.tournamentTP=Number(before.tournamentTP||0)+podiumActual;awardedKeys.add(key);}
       if(rec.type!=='ai') careerSyncUnlockRecord(rec);
-      game._lastExpAwards[p.id]={base:awardedKeys.has(key)&&actual===0?0:base,multiplier:level,actual};
+      game._lastExpAwards[p.id]={base:(podiumActual?base:0)+participation.base,podiumBase:podiumActual?base:0,multiplier:level,coreActual:podiumActual,participationBase:participation.base,participationActual:participation.actual,participationGames:participation.games,actual:podiumActual+participation.actual};
     });
     rankingWriteStore(store);
     const human=order.find(p=>!p.isAI),afterHuman=rankingNormalizeRecord(rankingReadStore()[humanKey],{name:localPlayerName(),type:'human',rating:1000});
     game.lastResultSnapshot={
       type:'tournament',size:Number(t.size||0),rows:tournamentRows(order),humanId:human?.id||null,
       expAward:human?game._lastExpAwards[human.id]:{base:0,multiplier:careerPlayerLevel(afterHuman),actual:0},
-      career:buildCareerSnapshot(beforeHuman,afterHuman),championId:t.results?.champion?.id||null,runnerUpId:t.results?.runnerUp?.id||null,bronzeId:t.results?.bronze?.id||null
+      career:buildCareerSnapshot({...beforeHuman,tournamentTP:Math.max(0,Number(beforeHuman.tournamentTP||0)-Number(game._lastExpAwards[order.find(p=>!p.isAI)?.id]?.participationActual||0))},afterHuman),championId:t.results?.champion?.id||null,runnerUpId:t.results?.runnerUp?.id||null,bronzeId:t.results?.bronze?.id||null
     };
   };
 
@@ -26039,13 +26107,19 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
       const aiLevel=Math.max(1,Number(award.promotionAILevel||award.multiplier||1));
       formula=wins>0?`${wins}${lang==='en'?' wins':lang==='ja'?'勝':'勝'} × ${romanLevel(aiLevel)} × 10 EXP = ${coreActual} EXP`:`0${lang==='en'?' wins':lang==='ja'?'勝':'勝'} × ${romanLevel(aiLevel)} × 10 EXP = 0 EXP`;
     }else{
-      formula=award.base>0?`${award.base} EXP × ${romanLevel(award.multiplier)} = ${coreActual} EXP`:`0 EXP × ${romanLevel(award.multiplier)} = 0 EXP`;
+      const seriesBase=Number(award.seriesBase??award.podiumBase??award.base??0);
+      formula=seriesBase>0?`${seriesBase} EXP × ${romanLevel(award.multiplier)} = ${coreActual} EXP`:`0 EXP × ${romanLevel(award.multiplier)} = 0 EXP`;
+      if(Number(award.participationGames||0)>0){
+        const label=lang==='en'?'Participation':lang==='ja'?'参加報酬':'參賽保底';
+        const rate=snap.type==='tournament'?DDD_TOURNAMENT_PARTICIPATION_BASE:DDD_LEAGUE_PARTICIPATION_BASE;
+        formula+=` + ${label} ${award.participationGames} × ${rate} × ${romanLevel(award.multiplier)} = ${award.participationActual} EXP`;
+      }
     }
     if(promotionTopUp>0){
       const topUpLabel=lang==='en'?'Promotion top-up':lang==='ja'?'昇格補填':'晉級補足';
       formula+=` + ${topUpLabel} ${promotionTopUp} EXP = <b>${award.actual} EXP</b>`;
     }else{
-      formula=formula.replace(/ = ([^=]+)$/,' = <b>$1</b>');
+      formula+=` → <b>${award.actual} EXP</b>`;
     }
     els.modalBody.innerHTML=`<div class="result-center">
       <div class="result-hero"><h3>${resultOutcome(snap)}</h3>${tableHtml(snap)}</div>
@@ -26236,7 +26310,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     const r=rankingRecordByKey(recordKey);if(!r){void showLeaderboardModal(window.__dddLeaderboardScope||'global');return;}const tr=L(),pod=rankingTournamentPodiumTotals(r),leagueWins=r.leagueWinsBySize||{},lang=window.gameLanguage||'zh';
     els.modalBackdrop.querySelector('.modal')?.classList.remove('mode-home-modal');els.modalTitle.textContent=tr.detailTitle;els.modalText.textContent='';
     const tier=r.type==='ai'?`${aiLadderMeta(r.aiCode)?.tier||'—'} ${localizedAINameByCode(r.aiCode,lang)||aiLadderMeta(r.aiCode)?.name||''}`:`${romanLevel(careerPlayerLevel(r))} ${ringName(careerRingCount(r),lang)}`;
-    els.modalBody.innerHTML=`<div class="leaderboard-detail-grid"><div class="leaderboard-detail-item wide"><span>${tr.player}</span><b>${escapeHtml(r.type==='ai'?(localizedAINameByCode(r.aiCode,lang)||r.name):r.name)}</b></div><div class="leaderboard-detail-item wide"><span>${r.type==='ai'?tr.aiTier:tr.playerLevel}</span><b>${escapeHtml(tier)}</b></div><div class="leaderboard-detail-item"><span>${tr.totalExp}</span><b>${totalExp(r)} EXP</b></div>${r.type==='ai'?`<div class="leaderboard-detail-item"><span>${tr.aiBaseExp}</span><b>${Math.max(aiBaseExpForCode(r.aiCode),Number(r.aiBaseExp||0))}</b></div>`:''}<div class="leaderboard-detail-item"><span>${tr.sourceLeague}</span><b>${Number(r.leaguePoints||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.sourceTournament}</span><b>${Number(r.tournamentTP||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.rating}</span><b>${Number(r.rating||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.tournamentGames}</span><b>${Number(r.tournaments||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.medals}</span><b>🥇${pod.champion}　🥈${pod.runnerUp}　🥉${pod.third}</b></div><div class="leaderboard-detail-item"><span>${tr.medalRate}</span><b>${rankingPercent(rankingMedalRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueRate}</span><b>${rankingPercent(rankingLeagueWinRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueSeries}</span><b>${Number(r.leagueSeries||0)}</b></div><div class="leaderboard-detail-item"><span>5P / 4P / 3P / 2P</span><b>${Number(leagueWins[5]||0)} / ${Number(leagueWins[4]||0)} / ${Number(leagueWins[3]||0)} / ${Number(leagueWins[2]||0)}</b></div></div>${r.type!=='ai'?careerProgressSummaryHtml(r):''}${rankingAbilityRadarHtml(r)}`;
+    els.modalBody.innerHTML=`<div class="leaderboard-detail-grid"><div class="leaderboard-detail-item wide"><span>${tr.player}</span><b>${escapeHtml(r.type==='ai'?(localizedAINameByCode(r.aiCode,lang)||r.name):r.name)}</b></div><div class="leaderboard-detail-item wide"><span>${r.type==='ai'?tr.aiTier:tr.playerLevel}</span><b>${escapeHtml(tier)}</b></div><div class="leaderboard-detail-item"><span>${tr.totalExp}</span><b>${totalExp(r)} EXP</b></div>${r.type==='ai'?`<div class="leaderboard-detail-item"><span>${tr.aiBaseExp}</span><b>${aiBaseExpForCode(r.aiCode)}</b></div>`:''}<div class="leaderboard-detail-item"><span>${tr.sourceLeague}</span><b>${Number(r.leaguePoints||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.sourceTournament}</span><b>${Number(r.tournamentTP||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.rating}</span><b>${Number(r.rating||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.tournamentGames}</span><b>${Number(r.tournaments||0)}</b></div><div class="leaderboard-detail-item"><span>${tr.medals}</span><b>🥇${pod.champion}　🥈${pod.runnerUp}　🥉${pod.third}</b></div><div class="leaderboard-detail-item"><span>${tr.medalRate}</span><b>${rankingPercent(rankingMedalRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueRate}</span><b>${rankingPercent(rankingLeagueWinRate(r))}</b></div><div class="leaderboard-detail-item"><span>${tr.leagueSeries}</span><b>${Number(r.leagueSeries||0)}</b></div><div class="leaderboard-detail-item"><span>5P / 4P / 3P / 2P</span><b>${Number(leagueWins[5]||0)} / ${Number(leagueWins[4]||0)} / ${Number(leagueWins[3]||0)} / ${Number(leagueWins[2]||0)}</b></div></div>${r.type!=='ai'?careerProgressSummaryHtml(r):''}${rankingAbilityRadarHtml(r)}`;
     els.modalActions.innerHTML='';els.modalActions.append(makeButton(tr.backLeaderboard,'btn primary',()=>{void showLeaderboardModal(window.__dddLeaderboardScope||'global');}),makeButton(tr.close,'btn',closeModal));els.modalBackdrop.classList.add('open');
   };
 
@@ -26524,7 +26598,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
   }
   function standardPage(preserve=false){
     view='standard';window.__dddV174View=view;const t=tr();modalBase(t.standardTitle,t.standardIntro);
-    els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}<div class="ddd-v174-choice-grid">${[2,3,4,5].map(n=>`<button class="ddd-v174-choice" type="button" data-v174-standard="${n}"><b>${n}${lang()==='en'?' Players':lang()==='ja'?'人':'人'}</b><small>${n===2?'4 Pt':'3 Pt'}｜${lang()==='en'?'W/L ':lang()==='ja'?'勝/敗 ':'勝/敗 '}${n*10}/${n*5} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}</small></button>`).join('')}</div></div>`;
+    els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}<div class="ddd-v174-choice-grid">${[2,3,4,5].map(n=>`<button class="ddd-v174-choice" type="button" data-v174-standard="${n}"><b>${n}${lang()==='en'?' Players':lang()==='ja'?'人':'人'}</b><small>${n===2?'4 Pt':'3 Pt'}｜${lang()==='en'?'W/L ':lang()==='ja'?'勝/敗 ':'勝/敗 '}${n*10}/${n*5} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}｜${lang()==='en'?'Per game +5 × level':lang()==='ja'?'各局 +5 × 等級':'每局 +5 × 等級'}</small></button>`).join('')}</div></div>`;
     els.modalActions.append(backButton());bindParticipation();document.querySelectorAll('[data-v174-standard]').forEach(b=>b.addEventListener('click',()=>startStandard(Number(b.dataset.v174Standard))));
   }
 
@@ -26547,7 +26621,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     els.modalBody.innerHTML=`<div class="ddd-v174-page">${participationPanel(Boolean(preserve))}
       <div class="ddd-v174-tournament-grid">${data.map(x=>{
         const locked=!careerTournamentUnlocked(x.size);
-        return `<button type="button" class="ddd-v174-tournament-option" data-v174-tournament="${x.size}" ${locked?'disabled':''}><span><b>${x.size}${lang()==='en'?'-Player Tournament':lang()==='ja'?'強戦':'強賽'}｜${x.games}${t.games}</b><small>${x.award} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}</small></span><span class="req">${locked?'🔒 ':''}${lang()==='en'?'Level ':''}${ROMAN_LEVELS[x.level-1]}${lang()==='ja'||lang()==='zh'?'級':''}</span></button>`;
+        return `<button type="button" class="ddd-v174-tournament-option" data-v174-tournament="${x.size}" ${locked?'disabled':''}><span><b>${x.size}${lang()==='en'?'-Player Tournament':lang()==='ja'?'強戦':'強賽'}｜${x.games}${t.games}</b><small>${x.award} EXP × ${lang()==='en'?'Level':lang()==='ja'?'レベル':'等級'}｜${lang()==='en'?'Per game +10 × level':lang()==='ja'?'各局 +10 × 等級':'每局 +10 × 等級'}</small></span><span class="req">${locked?'🔒 ':''}${lang()==='en'?'Level ':''}${ROMAN_LEVELS[x.level-1]}${lang()==='ja'||lang()==='zh'?'級':''}</span></button>`;
       }).join('')}</div>
     </div>`;
     els.modalActions.append(backButton());
@@ -26587,7 +26661,7 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
     });
     if(selectedPromotionAI==null||!unlocked.has(Number(selectedPromotionAI))) selectedPromotionAI=target&&unlocked.has(Number(target.code))?Number(target.code):Number(careerUnlockedAICodes()[0]||AI_ORDER.at(-1));
     modalBase(t.promotionTitle,t.promotionIntro);
-    const cards=AI_LADDER_WEAK_TO_STRONG.map(meta=>{const open=unlocked.has(Number(meta.code)),gate=Boolean(target&&Number(target.code)===Number(meta.code)),selected=Number(selectedPromotionAI)===Number(meta.code),attempt=latestPromotionAttempt.get(Number(meta.code)),challenged=Boolean(attempt),failed=Boolean(attempt&&attempt.cleared===false);const name=lang()==="zh"?meta.name:(localizedAINameByCode(meta.code,lang())||meta.name);const sub=!open?t.locked:(meta.tier==='XII'?(meta.ring==='銀環'?(lang()==='en'?'Silver':lang()==='ja'?'銀環':'銀環'):(lang()==='en'?'Bronze':lang()==='ja'?'銅環':'銅環')):meta.tier==='XI'?(lang()==='en'?'Final Challenger':lang()==='ja'?'最終挑戦者':'最終挑戰者'):gate?t.gatekeeper:t.normalAI);const attemptLabel=failed?t.failedChallenge:(challenged?t.challenged:'');return `<button type="button" class="ddd-v174-ai ${gate?'gatekeeper':''} ${selected?'selected':''}" data-v174-ai="${meta.code}" ${open?'':'disabled'}><b>${meta.tier} ${ringIconHtml(meta.ring==='金環'?'gold':meta.ring==='銀環'?'silver':'bronze')} ${escapeHtml(name)}</b><small>${meta.ring}｜${sub}${attemptLabel?`｜${attemptLabel}`:''}</small></button>`;}).join('');
+    const cards=AI_LADDER_WEAK_TO_STRONG.map(meta=>{const open=unlocked.has(Number(meta.code)),gate=Boolean(target&&Number(target.code)===Number(meta.code)),selected=Number(selectedPromotionAI)===Number(meta.code),attempt=latestPromotionAttempt.get(Number(meta.code)),challenged=Boolean(attempt),failed=Boolean(attempt&&attempt.cleared===false);const name=lang()==="zh"?meta.name:(localizedAINameByCode(meta.code,lang())||meta.name);const role=meta.ring==='金環'?t.gatekeeper:t.normalAI;const sub=open?role:`${t.locked}｜${role}`;const attemptLabel=failed?t.failedChallenge:(challenged?t.challenged:'');return `<button type="button" class="ddd-v174-ai ${gate?'gatekeeper':''} ${selected?'selected':''}" data-v174-ai="${meta.code}" ${open?'':'disabled'}><b>${meta.tier} ${ringIconHtml(meta.ring==='金環'?'gold':meta.ring==='銀環'?'silver':'bronze')} ${escapeHtml(name)}</b><small>${meta.ring}｜${sub}${attemptLabel?`｜${attemptLabel}`:''}</small></button>`;}).join('');
     const maxTierNote=currentLevel>=PLAYER_RANK_MAX
       ? (lang()==='en'?'Maximum Level XII reached. Challenge Cronus (Bronze) and Izanagi (Silver).':lang()==='ja'?'最高XII級に到達。クロノス（銅）・イザナギ（銀）に挑戦。':'已達最高 XII級；可挑戰克洛諾斯（銅）與伊邪那岐（銀）。')
       : t.needGold;
