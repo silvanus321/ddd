@@ -1,5 +1,6 @@
 <!-- v236 2026-11-23: AI baseline EXP aligned to tier/ring; gatekeeper promotion compatibility; promotion cards show normal/gatekeeper AI. -->
 <!-- v236 EXP: 正式一般賽每局 +5×大等級，錦標賽每局 +10×大等級；既有獎勵另外發放，升級戰不適用。 -->
+<!-- v236 LV5 fix: Two free actions resolve before checking nitrogen narcosis; G5 surfacing+wire combo. -->
 <!-- v236: XII級 銀環・伊邪那岐 AI233／銅環・克洛諾斯 AI232; 36強須達 XII級. -->
 <!-- v233: XI Messiah adaptive tempo; 100 fixed-seed games 60/100 vs v231, independent-seed 62/100. -->
 <!-- v172: free-event confirmation buttons follow left/right-handed preference -->
@@ -12465,9 +12466,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         for(const label of actions){
           const result=(player.isAI||game.fastMode)?executeBestMiniAction(player,label):await executeHumanMiniAction(player,label);
           details.push(`${player.name}${result}`);
-          await checkBust(player,"免費行動後");
-          if(game.gameOver) break;
+          // LV5 的兩項免費行動屬同一個事件：不能在第一項行動後提前觸發氮醉，
+          // 否則會破壞第二項行動原本合法的牌組。完成本玩家的整組免費行動後才檢查。
+          if(game.gameOver || player.eliminated) break;
         }
+        if(!game.gameOver && !player.eliminated) await checkBust(player,"LV5雙免費行動結束後");
         if(game.gameOver) break;
       }
       return details.join("；");
@@ -12538,9 +12541,11 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
         for (const label of CONFIG.lv5Actions[trigger.color]) {
           const result = (source.isAI || game.fastMode) ? executeBestMiniAction(source, label) : await executeHumanMiniAction(source, label);
           details.push(result || `${label}略過`);
-          await checkBust(source,"免費行動後");
+          // 上浮＋佈線、雙減壓等都是同一張 LV5 事件提供的完整連鎖；
+          // 先結算兩個免費行動，再用當時的最終手牌／減壓區／氮上限檢查氮醉。
           if(game.gameOver || source.eliminated) break;
         }
+        if(!game.gameOver && !source.eliminated) await checkBust(source,"LV5雙免費行動結束後");
       } else if (trigger.value === 4) {
         return resolveLv4Draft(trigger, source);
       } else if (trigger.value === 3) {
