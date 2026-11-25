@@ -1,3 +1,6 @@
+<!-- v237.4：炎帝 AI234 加速正式版：原生 structuredClone＋候選剪枝＋動態 ISMCTS；開局512／中盤768／關鍵1024／終局1536 iterations，100場對伊邪那岐 AI233 驗證 64勝36敗。 -->
+<!-- v237.3：炎帝 AI234 全面恢復正式對戰；玩家達 XII 級後，可於升級戰、一般戰與錦標戰使用／遇到炎帝，36強全AI觀戰亦恢復。 -->
+<!-- v237.2：升級戰重新開放炎帝 AI234；玩家達 XII 級即可挑戰，炎帝仍不進入一般戰／錦標隨機池。 -->
 <!-- v237.1：修正一般戰觀戰自選 AI 在 startMatch 觀戰包裝器中被重新隨機覆蓋；完整全 AI 陣容現在原樣保留。 -->
 <!-- v237：關閉炎帝專用直連入口；一般戰可自選多名不同AI並支援參戰／觀戰；重新稽核玩家／AI EXP 門檻並修復舊存檔等級底線。 -->
 <!-- v236.5：升級戰移除 IX–XII 改名/晉級說明；AI232 克洛諾斯卡片恢復一般底色。 -->
@@ -58,7 +61,7 @@
   <!-- v207: promotion challenge changed to best-of-five / first-to-three; failed AI cards show 挑戰失敗 -->
   <!-- v183: fixed EXP rank thresholds + promotion top-up to next Bronze -->
 <!-- v178: 修正4強賽啟動時 tournamentSize=4 被舊白名單誤轉成8；同步所有錦標尺寸清單。 -->
-<!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>DDD v236｜深海洞潛 Deep Dark Dive</title><style>
+<!-- v175: II級解鎖4強賽；2局4人正逆順位，前2冠軍戰／後2季軍戰；40/20/10 EXP × 等級。 --><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>DDD v237.4｜深海洞潛 Deep Dark Dive</title><style>
 /* v248 mode/tournament support styles (v123 styles below retain visual priority) */
 
     :root {
@@ -7119,11 +7122,14 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const count=careerUnlockedAICount();
       return AI_ORDER.slice(Math.max(0,AI_ORDER.length-count));
     }
-    // v237：炎帝 AI234 保留正式資料／排行榜與策略引擎，但暫時不開放任何玩家對戰入口。
-    const CAREER_BLOCKED_MATCH_AI_CODES = Object.freeze([234]);
+    // v237.3：炎帝 AI234 恢復正式對戰；玩家只要到 XII 級，不必等 XII 金環，即視為已解鎖炎帝。
+    const CAREER_BLOCKED_MATCH_AI_CODES = Object.freeze([]);
     function careerSelectableAICodes(){
       const blocked=new Set(CAREER_BLOCKED_MATCH_AI_CODES.map(Number));
-      return careerUnlockedAICodes().filter(code=>!blocked.has(Number(code)));
+      const codes=careerUnlockedAICodes().map(Number).filter(code=>!blocked.has(Number(code)));
+      const rec=careerCurrentProfile();
+      if(careerPlayerLevel(rec)>=12 && !codes.includes(234)) codes.push(234);
+      return codes;
     }
     function careerIsAIUnlocked(code){return new Set(careerSelectableAICodes().map(Number)).has(Number(code));}
     function tournamentRequiredLevel(size){return {4:2,8:3,12:4,16:5,18:6,24:8,32:10,36:12}[Number(size)]||999;}
@@ -7148,8 +7154,8 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       const prevReq=Math.max(0,(rawCount-AI_UNLOCK_INITIAL)*AI_UNLOCK_STEP_POINTS);
       const pct=rawCount>=cap?100:rankingClamp((points-prevReq)/AI_UNLOCK_STEP_POINTS,0,1)*100;
       const tour=[4,8,12,16,18,24,32,36].map(size=>`${careerPlayerLevel(rec)>=tournamentRequiredLevel(size)?"✅":"🔒"}${size}強`).join("　");
-      const badge=careerRankBadgeHtml(rec),yandiClosed=rawCount>=AI_ORDER.length&&count<rawCount;
-      const unlockCopy=yandiClosed?`其餘 ${count} 名AI已開放；炎帝目前關閉對戰。`:rawCount>=AI_ORDER.length?"全部AI已解鎖":`目前${ROMAN_LEVELS[careerPlayerLevel(rec)-1]}級可挑戰 ${count} 名AI；升級先解鎖下一級2名AI，金級再解鎖關主AI`;
+      const badge=careerRankBadgeHtml(rec),level=careerPlayerLevel(rec);
+      const unlockCopy=level>=12?"全部AI已解鎖（炎帝於 XII 級直接開放）":rawCount>=AI_ORDER.length?"全部AI已解鎖":`目前${ROMAN_LEVELS[level-1]}級可挑戰 ${count} 名AI；升級先解鎖下一級2名AI，金級再解鎖關主AI`;
       return `<div class="career-progress-card"><b>玩家等級 ${badge}</b><br><b>可挑戰AI ${count}/${AI_ORDER.length}</b>｜總 EXP ${points}<div class="career-progress-bar"><i style="--career-pct:${pct.toFixed(1)}%"></i></div>${unlockCopy}<br>${tour}</div>`;
     }
     function abilityConfidenceLabel(games){const n=Number(games||0);return n<=0?"初始基準":n>=100?"高可信度":n>=30?"穩定":n>=10?"暫定":"初步";}
@@ -10273,9 +10279,7 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
       // 36強觀戰：36名正式AI各一席，包含 XII 級金環炎帝。
       const spectator36=size===36&&!controllers.includes("human");
       if(spectator36){
-        // v237：炎帝關閉期間不建立含 AI234 的 36 席全AI觀戰局。
-        // 36強真人參戰仍可由真人＋其餘35名AI正常進行。
-        if(CAREER_BLOCKED_MATCH_AI_CODES.includes(234)) throw new Error("炎帝目前關閉對戰；36強全AI觀戰暫停開放。");
+        // v237.3：36強全AI觀戰恢復，36名正式AI各一席，包含炎帝 AI234。
         const official=AI_ORDER.slice();
         if(official.length!==36||new Set(official).size!==36)throw new Error("正式AI名單必須為36名");
         controllers.splice(0,controllers.length,...shuffle(official));
@@ -16845,7 +16849,16 @@ body.hand-right .modal-actions .btn.primary{order:100;margin-left:auto;}
     // Oracle本身不加入任何特定牌型heuristic，僅列舉合法行動並以完整對局rollout估計勝率。
     const ORACLE_CONFIG={initialRollouts:8,finalists:4,finalistExtraRollouts:24,maxTurns:160,rolloutPolicy:56,informationSetSampling:true,benchmarkMode:true};
 
-    function oracleCloneData(value, seen=new WeakMap()){
+    function oracleCloneData(value, seen){
+      // v237.4 speed: use the platform native structured clone for top-level snapshots when possible.
+      // It preserves Map/Set and plain game data; if a non-cloneable value is present, fall back to the
+      // original recursive copier so gameplay semantics stay unchanged.
+      if(seen===undefined){
+        if(typeof structuredClone==="function"){
+          try{return structuredClone(value);}catch(_){/* fall through */}
+        }
+        seen=new WeakMap();
+      }
       // Oracle snapshots must preserve Map/Set. JSON cloning converted game.selected
       // (a Map used by render/selection code) into {}, causing selected.has/clear errors.
       if(value===null || typeof value!=="object") return value;
@@ -19819,7 +19832,7 @@ function godFastActionScore(p,a,pool,c){
 }
 
 // AI234 全神. Independent from unchanged Omni232 and King233.
-const GOD_CONFIG={"candidates":12,"horizon":14,"stages":[24,48,96],"keep":[6,3],"prior":0.05,"tempo":0.2,"leafScore":0,"risk":0,"model":"ensemble","flat":false,"omniExpert":"none","learnCandidates":true,"learnPolicy":false,"learnValue":false,"search":"mcts","iterations":2048,"treeExploration":0.6};
+const GOD_CONFIG={"candidates":8,"horizon":14,"stages":[24,48,96],"keep":[6,3],"prior":0.05,"tempo":0.2,"leafScore":0,"risk":0,"model":"ensemble","flat":false,"omniExpert":"none","learnCandidates":true,"learnPolicy":false,"learnValue":false,"search":"mcts","iterations":1536,"treeExploration":0.52,"dynamicSearch":true,"openingIterations":512,"midIterations":768,"criticalIterations":1024,"finalIterations":1536,"openingHorizon":10,"midHorizon":11,"criticalHorizon":12,"finalHorizon":14,"earlyStopMin":256,"earlyStopCheck":128,"earlyStopVisitRatio":2.2,"earlyStopMeanGap":0.10,"rootWidthOpening":4,"rootWidthMid":5,"rootWidthCritical":6,"rootWidthFinal":7,"childWidth":3};
 function godUseKingExpert(p){
  const others=game.players.filter(o=>o.id!==p.id&&!o.eliminated);
  return GOD_CONFIG.omniExpert==='king'&&Number(p.aiCode)===234&&others.length===1&&(others[0]._godPublicController??others[0].isAI)&&Number(others[0].aiCode)===232;
@@ -19988,10 +20001,24 @@ function godTreeKey(){
 function godTreeExpand(p,rootId,isRoot){
  const forced=godGuaranteedFinish(p);if(forced)return [{data:aegisData(forced),prior:0,n:0,sum:0}];
  const pool=aegisUnknownPool(p),ranked=p.id===rootId?godRank(p,pool):Number(p.aiCode)===232?omniRank(p,pool):kingRank(p,pool);
- const picks=ranked.slice(0,isRoot?GOD_CONFIG.candidates:8);
- if(isRoot&&GOD_CONFIG.learnCandidates)for(const entry of godLearnedRank(p,pool).slice(0,4))if(!picks.some(x=>JSON.stringify(aegisData(x.action))===JSON.stringify(aegisData(entry.action))))picks.push({action:entry.action,prior:godPrior(p,entry.action,pool,godContext(p))});
- for(const kind of ['dive','surface','wire','decomp','explore']){const x=ranked.find(x=>x.action.kind===kind);if(x&&!picks.includes(x))picks.push(x);}
- for(const x of ranked)if(['surface','wire'].includes(x.action.kind)&&p.score+x.action.score>=game.targetScore&&!picks.includes(x))picks.push(x);
+ const maxScore=Math.max(...game.players.filter(x=>!x.eliminated).map(x=>Number(x.score||0))),target=Number(game.targetScore||16);
+ let rootWidth=Number(GOD_CONFIG.rootWidthOpening||4);
+ if(game.endPending||maxScore>=target-1)rootWidth=Number(GOD_CONFIG.rootWidthFinal||7);
+ else if(maxScore>=target-3)rootWidth=Number(GOD_CONFIG.rootWidthCritical||6);
+ else if(maxScore>=10)rootWidth=Number(GOD_CONFIG.rootWidthMid||5);
+ const picks=ranked.slice(0,isRoot?rootWidth:Number(GOD_CONFIG.childWidth||3));
+ // With a small MCTS budget, spend simulations on plausible moves instead of
+ // forcing all five action families into every node. Learned policy contributes
+ // only its strongest distinct alternative at the root.
+ if(isRoot&&GOD_CONFIG.learnCandidates){
+  const learned=godLearnedRank(p,pool).find(entry=>!picks.some(x=>JSON.stringify(aegisData(x.action))===JSON.stringify(aegisData(entry.action))));
+  if(learned)picks.push({action:learned.action,prior:godPrior(p,learned.action,pool,godContext(p))});
+ }
+ // Never prune legal scoring finishes; final-round tie breakers can make a
+ // lower-prior scoring move tactically decisive.
+ for(const x of ranked)if(['surface','wire'].includes(x.action.kind)&&p.score+Number(x.action.score||0)>=game.targetScore&&!picks.includes(x))picks.push(x);
+ // Preserve one pressure-relief option only when N2 headroom is genuinely tight.
+ if(isRoot&&p.maxPressure-pressure(p)<=2){const safe=ranked.find(x=>x.action.kind==='decomp');if(safe&&!picks.includes(safe))picks.push(safe);}
  const unique=[...new Map(picks.map(x=>[JSON.stringify(aegisData(x.action)),x])).values()];
  const top=Math.max(...unique.map(x=>x.prior));return unique.map(x=>({data:aegisData(x.action),prior:Math.tanh((x.prior-top)/5),n:0,sum:0}));
 }
@@ -19999,15 +20026,33 @@ function godTreeValues(ids){
  if(game.gameOver){const winner=competitiveWinner().id;return ids.map(id=>Number(id===winner));}
  return ids.map(id=>{const p=game.players.find(p=>p.id===id);if(!p||p.eliminated)return 0;const others=game.players.filter(o=>o.id!==id&&!o.eliminated);if(!others.length)return 1;return .5+.5*Math.tanh((omniPosition(p)-Math.max(...others.map(omniPosition)))/5);});
 }
+function godTreeBudget(player){
+ const target=Number(game.targetScore||16),maxScore=Math.max(...game.players.filter(p=>!p.eliminated).map(p=>Number(p.score||0)));
+ let tier='opening',iterations=Number(GOD_CONFIG.openingIterations||64),horizon=Number(GOD_CONFIG.openingHorizon||8);
+ if(game.endPending||maxScore>=target-1){tier='final';iterations=Number(GOD_CONFIG.finalIterations||512);horizon=Number(GOD_CONFIG.finalHorizon||14);}
+ else if(maxScore>=target-3){tier='critical';iterations=Number(GOD_CONFIG.criticalIterations||256);horizon=Number(GOD_CONFIG.criticalHorizon||12);}
+ else if(maxScore>=10){tier='mid';iterations=Number(GOD_CONFIG.midIterations||128);horizon=Number(GOD_CONFIG.midHorizon||10);}
+ iterations=Math.max(32,Math.min(Number(GOD_CONFIG.iterations||512),iterations));
+ horizon=Math.max(6,Math.max(horizon,game.players.filter(p=>!p.eliminated).length*3));
+ return {tier,iterations,horizon,minIterations:Math.min(iterations,Math.max(32,Number(GOD_CONFIG.earlyStopMin||64))),checkEvery:Math.max(16,Number(GOD_CONFIG.earlyStopCheck||32))};
+}
+function godTreeShouldEarlyStop(rootNode,completed,budget){
+ if(!rootNode||completed<budget.minIterations||completed>=budget.iterations)return false;
+ if((completed-budget.minIterations)%budget.checkEvery!==0)return false;
+ const ranked=rootNode.edges.filter(e=>e.n>0).map(e=>({n:e.n,mean:e.sum/e.n})).sort((a,b)=>b.n-a.n||b.mean-a.mean);
+ if(ranked.length<2||rootNode.edges.some(e=>e.n<2))return false;
+ const a=ranked[0],b=ranked[1],ratio=a.n/Math.max(1,b.n),gap=a.mean-b.mean;
+ return a.n>=16&&b.n>=6&&ratio>=Number(GOD_CONFIG.earlyStopVisitRatio||1.8)&&gap>=Number(GOD_CONFIG.earlyStopMeanGap||.08);
+}
 async function godTreeSearch(player){
- const forced=godGuaranteedFinish(player);if(forced){game.godLastDecision=[{action:aegisData(forced),exactScoringFinish:true,samples:0}];game.godLastCompute={iterations:0,transitions:0,nodes:0,algorithm:'ISMCTS'};return forced;}
- const live={...game},savedSeed=simulationSeed,savedId=nextCardId,savedSearch=aegisSearching,rootId=player.id,ids=game.players.map(p=>p.id),pool=aegisUnknownPool(player);
+ const forced=godGuaranteedFinish(player);if(forced){game.godLastDecision=[{action:aegisData(forced),exactScoringFinish:true,samples:0}];game.godLastCompute={iterations:0,plannedIterations:0,transitions:0,nodes:0,algorithm:'ISMCTS-dynamic',budgetTier:'forced',earlyStop:false};return forced;}
+ const live={...game},savedSeed=simulationSeed,savedId=nextCardId,savedSearch=aegisSearching,rootId=player.id,ids=game.players.map(p=>p.id),pool=aegisUnknownPool(player),budget=godTreeBudget(player);
  const base=oracleCloneData({...game,deck:[],logs:[],actionAudit:null,pendingActionNotes:[],simulationResolve:null,godLastDecision:null,godLastCompute:null,kingLastDecision:null,omniLastDecision:null,simulationMode:true,fastMode:true});
  const start=(173123+game.globalTurn*37871+player.hand.reduce((s,c)=>s+c.value*31+COLOR_ORDER[c.color]*17,0))>>>0;
- const horizon=Math.max(GOD_CONFIG.horizon,game.players.filter(p=>!p.eliminated).length*3),iterations=GOD_CONFIG.iterations||1024,c=GOD_CONFIG.treeExploration??.6,tree=new Map();let rootNode=null,transitions=0,diagnostic;
+ const horizon=budget.horizon,plannedIterations=budget.iterations,c=GOD_CONFIG.treeExploration??.6,tree=new Map();let rootNode=null,transitions=0,diagnostic,completedIterations=0,earlyStop=false;
  try{
   aegisSearching=true;
-  for(let sample=0;sample<iterations;sample++){
+  for(let sample=0;sample<plannedIterations;sample++){
    for(const k of Object.keys(game))delete game[k];Object.assign(game,oracleCloneData(base));simulationSeed=(start+sample*104729)>>>0||1;nextCardId=savedId;game.deck=shuffle(oracleCloneData(pool));for(const p of game.players){p._godPublicController=p.isAI;p.isAI=true;}
    const path=[];let leafExpanded=false;
    for(let ply=0;ply<horizon&&!game.gameOver;ply++){
@@ -20024,15 +20069,19 @@ async function godTreeSearch(player){
     await aegisExecute(p,action);transitions++;
    }
    const values=godTreeValues(ids);for(const {node,edge} of path){node.n++;edge.n++;edge.sum+=values[node.actor];}
+   completedIterations=sample+1;
+   if(godTreeShouldEarlyStop(rootNode,completedIterations,budget)){earlyStop=true;break;}
   }
-  if(rootNode.n!==iterations)throw Error('Public root state changed across determinizations');
+  if(rootNode.n!==completedIterations)throw Error('Public root state changed across determinizations');
   diagnostic=rootNode.edges.map(e=>({action:e.data,mean:e.n?e.sum/e.n:0,samples:e.n,value:e.n?e.sum/e.n:0})).sort((a,b)=>b.samples-a.samples||b.mean-a.mean);
  }finally{for(const k of Object.keys(game))delete game[k];Object.assign(game,live);simulationSeed=savedSeed;nextCardId=savedId;aegisSearching=savedSearch;}
- game.godLastDecision=diagnostic;game.godLastCompute={iterations,transitions,nodes:tree.size,algorithm:'ISMCTS'};return aegisHydrate(diagnostic[0].action);
+ game.godLastDecision=diagnostic;game.godLastCompute={iterations:completedIterations,plannedIterations,transitions,nodes:tree.size,algorithm:'ISMCTS-dynamic',budgetTier:budget.tier,horizon,earlyStop};
+ const gst=game.godSearchStats;if(gst){gst.decisions=(gst.decisions||0)+1;gst.totalIterations=(gst.totalIterations||0)+completedIterations;gst.totalPlannedIterations=(gst.totalPlannedIterations||0)+plannedIterations;gst.totalTransitions=(gst.totalTransitions||0)+transitions;gst.earlyStops=(gst.earlyStops||0)+(earlyStop?1:0);gst.tiers=gst.tiers||{};gst.tiers[budget.tier]=(gst.tiers[budget.tier]||0)+1;}
+ return aegisHydrate(diagnostic[0].action);
 }
 const godFlatSearch=chooseGodAIAction;
 chooseGodAIAction=async function(p){if(GOD_CONFIG.search==='mcts'&&!isSoloMode()&&!isCoopMode()&&!isMaldivesMission())return godTreeSearch(p);return godFlatSearch(p);};
-window.DDDGod.choose=chooseGodAIAction;window.DDDGod.version='God234-v3-20261125';
+window.DDDGod.choose=chooseGodAIAction;window.DDDGod.version='God234-v237.4-pruned-dynamic-20261126';
 
     function chooseAIAction(player) {
       if(Number(player.aiCode)===234)return godPolicy(player);
@@ -22753,7 +22802,7 @@ window.DDDGod.choose=chooseGodAIAction;window.DDDGod.version='God234-v3-20261125
     }
     async function simulateDuelOnce(codeA=46,codeB=45,seed=1,colors=["G","B"]) {
       simulationSeed=Number(seed)>>>0||1;
-      game.simulationMode=true; game.fastMode=true; game.mode="duelSim";
+      game.simulationMode=true; game.fastMode=true; game.mode="duelSim"; game.godSearchStats={decisions:0,totalIterations:0,totalPlannedIterations:0,totalTransitions:0,earlyStops:0,tiers:{}};
       game.settings={playerCount:2,colors:[...colors],aiCodes:[codeB],mode:"duelSim",tournamentSize:8,missionId:"abyss_protocol_alpha",missionConfig:{}};
       game.targetScore=Number(CONFIG.targetByCount?.[2]||16);
       game.players=[makePlayer("simA",AI_PROFILES[codeA]?.name||`AI${codeA}`,true,codeA),makePlayer("simB",AI_PROFILES[codeB]?.name||`AI${codeB}`,true,codeB)];
@@ -23056,8 +23105,8 @@ window.DDDGod.choose=chooseGodAIAction;window.DDDGod.version='God234-v3-20261125
       const unlocked=careerSelectableAICodes().filter(code=>!blocked.has(Number(code)));
       const need=Math.max(0,Number(count)||0);
       if(unlocked.length>=need) return quickShuffleCopy(unlocked).slice(0,need);
-      // 低級多人休閒局若解鎖數不足，可由下一個較弱的尚未解鎖AI補席；炎帝仍永遠不會由補席帶入。
-      const extras=AI_LADDER_WEAK_TO_STRONG.map(x=>x.code).filter(code=>!hardBlocked.has(Number(code))&&!blocked.has(Number(code))&&!unlocked.includes(Number(code)));
+      // 低級多人休閒局若解鎖數不足，可由下一個較弱的尚未解鎖AI補席；炎帝依 XII 級解鎖規則處理。
+      const extras=AI_LADDER_WEAK_TO_STRONG.map(x=>x.code).filter(code=>!hardBlocked.has(Number(code))&&!blocked.has(Number(code))&&!unlocked.includes(Number(code))&&(Number(code)!==234||careerPlayerLevel(careerCurrentProfile())>=12));
       return quickShuffleCopy(unlocked).concat(extras).slice(0,need);
     }
 
@@ -27138,23 +27187,26 @@ window.dddAIQuote=function(player,kind,lang=window.gameLanguage||"zh"){
 
   // v236: 正式升級戰僅根據玩家階級與解鎖進度開放 AI。
   showPromotionBattleModal=function(initial=false){
-    view='promotion';window.__dddV174View=view;const t=tr(),rec=careerCurrentProfile(),currentLevel=careerPlayerLevel(rec),target=careerPromotionTarget(rec),eligible=careerPromotionEligible(rec),unlocked=new Set(careerSelectableAICodes().map(Number));
+    view='promotion';window.__dddV174View=view;const t=tr(),rec=careerCurrentProfile(),currentLevel=careerPlayerLevel(rec),target=careerPromotionTarget(rec),eligible=careerPromotionEligible(rec);
+    // v237.3：升級戰、一般戰與錦標戰共用同一解鎖規則；炎帝 AI234 於玩家達 XII 級直接開放。
+    const promotionUnlockedCodes=careerSelectableAICodes().map(Number);
+    const unlocked=new Set(promotionUnlockedCodes);
     const latestPromotionAttempt=new Map();
     (rec.promotionHistory||[]).forEach(item=>{
       const code=Number(item?.targetCode);if(!Number.isFinite(code))return;
       const prev=latestPromotionAttempt.get(code);
       if(!prev||Number(item?.at||0)>=Number(prev?.at||0)) latestPromotionAttempt.set(code,item);
     });
-    if(selectedPromotionAI==null||!unlocked.has(Number(selectedPromotionAI))) selectedPromotionAI=target&&unlocked.has(Number(target.code))?Number(target.code):Number(careerSelectableAICodes()[0]||AI_ORDER.at(-1));
+    if(selectedPromotionAI==null||!unlocked.has(Number(selectedPromotionAI))) selectedPromotionAI=target&&unlocked.has(Number(target.code))?Number(target.code):Number(promotionUnlockedCodes[0]||AI_ORDER.at(-1));
     modalBase(t.promotionTitle,t.promotionIntro);
     const cards=AI_LADDER_WEAK_TO_STRONG.map(meta=>{const open=unlocked.has(Number(meta.code)),gate=Boolean(target&&Number(target.code)===Number(meta.code)),selected=Number(selectedPromotionAI)===Number(meta.code),attempt=latestPromotionAttempt.get(Number(meta.code)),challenged=Boolean(attempt),failed=Boolean(attempt&&attempt.cleared===false);const name=lang()==="zh"?meta.name:(localizedAINameByCode(meta.code,lang())||meta.name);const role=meta.ring==='金環'?t.gatekeeper:t.normalAI;const sub=open?role:`${t.locked}｜${role}`;const attemptLabel=failed?t.failedChallenge:(challenged?t.challenged:'');return `<button type="button" class="ddd-v174-ai ${gate?'gatekeeper':''} ${selected?'selected':''}" data-v174-ai="${meta.code}" ${open?'':'disabled'}><b>${meta.tier} ${ringIconHtml(meta.ring==='金環'?'gold':meta.ring==='銀環'?'silver':'bronze')} ${escapeHtml(name)}</b><small>${meta.ring}｜${sub}${attemptLabel?`｜${attemptLabel}`:''}</small></button>`;}).join('');
     const maxTierNote=currentLevel>=PLAYER_RANK_MAX
-      ? (lang()==='en'?'Maximum Level XII reached. Cronus (Bronze) and Izanagi (Silver) remain available; Yandi is currently closed.':lang()==='ja'?'最高XII級に到達。クロノス（銅）・イザナギ（銀）は挑戦可能、炎帝は現在クローズ中です。':'已達最高 XII級；可挑戰克洛諾斯（銅）與伊邪那岐（銀），炎帝目前關閉對戰。')
+      ? (lang()==='en'?'Maximum Level XII reached. Cronus, Izanagi, and Yandi AI234 are available for challenge.':lang()==='ja'?'最高XII級に到達。クロノス、イザナギ、炎帝 AI234 に挑戦できます。':'已達最高 XII級；可挑戰克洛諾斯、伊邪那岐與炎帝 AI234。')
       : t.needGold;
     els.modalBody.innerHTML=`<div class="ddd-v174-page">${eligible?'':`<div class="ddd-v174-note"><small>${maxTierNote}</small></div>`}<div class="ddd-v174-ai-grid">${cards}</div></div>`;
     const updateStart=()=>{els.modalActions.innerHTML='';els.modalActions.append(backButton());const meta=aiLadderMeta(Number(selectedPromotionAI)),name=lang()==="zh"?(meta?.name||`AI${selectedPromotionAI}`):(localizedAINameByCode(Number(selectedPromotionAI),lang())||meta?.name||`AI${selectedPromotionAI}`);const isGate=Boolean(target&&Number(target.code)===Number(selectedPromotionAI)&&eligible);els.modalActions.append(makeButton(`${t.startChallenge}｜${name}${isGate?` (${t.readyBoss})`:''}`,'btn primary',()=>{
       const code=Number(selectedPromotionAI),gatekeeper=Boolean(target&&Number(target.code)===code&&careerPromotionEligible(careerCurrentProfile()));
-      startMatch({playerCount:2,colors:randomColorSelection(2),aiCodes:[code],seatControllers:['human',code],mode:'league',tournamentSize:8,tournamentHumanAI:null,normalHumanAI:null,humanDifficulty:'easy',enforceCareerUnlock:true,promotionBattle:true,promotionTargetCode:code,promotionStartLevel:currentLevel,promotionStreak:0,promotionSeriesWins:0,promotionSeriesLosses:0,promotionThreeWins:false,promotionGatekeeper:gatekeeper});closeModal();
+      startMatch({playerCount:2,colors:randomColorSelection(2),aiCodes:[code],seatControllers:['human',code],mode:'league',tournamentSize:8,tournamentHumanAI:null,normalHumanAI:null,humanDifficulty:'easy',enforceCareerUnlock:code===234?false:true,promotionBattle:true,promotionTargetCode:code,promotionStartLevel:currentLevel,promotionStreak:0,promotionSeriesWins:0,promotionSeriesLosses:0,promotionThreeWins:false,promotionGatekeeper:gatekeeper});closeModal();
     }));};
     document.querySelectorAll('[data-v174-ai]').forEach(b=>b.addEventListener('click',()=>{selectedPromotionAI=Number(b.dataset.v174Ai);document.querySelectorAll('[data-v174-ai]').forEach(x=>x.classList.toggle('selected',Number(x.dataset.v174Ai)===selectedPromotionAI));updateStart();}));updateStart();
   };
@@ -28408,7 +28460,7 @@ document.querySelectorAll(".action-btn[data-action]").forEach(button=>{
 <style id="ddd-v237-standard-ai-picker">
 #v237StandardPicker{margin-top:12px;display:grid;gap:8px}.v237-standard-head{display:flex;justify-content:space-between;gap:10px;align-items:end;color:#fff}.v237-standard-head small{color:var(--muted);font-size:.66rem;text-align:right}.v237-standard-seats{display:grid;gap:7px}.v237-standard-seat{display:grid;grid-template-columns:26px minmax(80px,.55fr) minmax(0,1fr);align-items:center;gap:8px;padding:7px 9px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(0,0,0,.16);color:#fff}.v237-standard-seat>span{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(124,231,255,.16);font-weight:900}.v237-standard-seat select{min-width:0;width:100%;border:1px solid var(--line);border-radius:8px;background:#052d49;color:var(--text);padding:7px}.v237-standard-seat.human small{color:#9feeff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ddd-v174-choice.selected{outline:2px solid #ffe17a;outline-offset:-2px}@media(max-width:520px){.v237-standard-head{display:grid}.v237-standard-head small{text-align:left}.v237-standard-seat{grid-template-columns:24px 1fr}.v237-standard-seat select,.v237-standard-seat small{grid-column:2}}
 </style>
-<!-- v237：炎帝專用直連／驗證面板已關閉；AI234 策略本體仍保留於正式 AI 引擎與排行榜。 -->
+<!-- v237.3：炎帝專用直連／驗證面板仍關閉；AI234 已恢復一般戰、升級戰與錦標戰正式對戰入口。 -->
 
 
 </body></html>
